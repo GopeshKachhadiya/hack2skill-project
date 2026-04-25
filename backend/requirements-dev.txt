@@ -1,0 +1,46 @@
+# ═══════════════════════════════════════════════════════
+#  Supply Chain Backend — Lightweight Dev Requirements
+#  (No PostgreSQL or Redis required — uses SQLite)
+# ═══════════════════════════════════════════════════════
+
+# Core Framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+python-multipart==0.0.20
+
+# Database & ORM (SQLite works out of the box)
+sqlalchemy==2.0.40
+alembic==1.15.2
+
+# Cache (optional — backend falls back gracefully)
+redis==5.2.1
+
+# Scheduling
+apscheduler==3.11.0
+
+# HTTP Client
+httpx==0.28.1
+
+# ML / Forecasting
+prophet==1.1.6
+pandas==2.2.3
+numpy==2.2.5
+scikit-learn==1.6.1
+
+# Settings & Config
+pydantic==2.11.4
+pydantic-settings==2.9.1
+python-dotenv==1.1.0
+
+# Logging
+loguru==0.7.3
+
+# Data Parsing
+beautifulsoup4==4.13.4
+
+# Serialization
+ujson==5.10.0
+
+# Utilities
+python-dateutil==2.9.0.post0
+pytz==2025.2
