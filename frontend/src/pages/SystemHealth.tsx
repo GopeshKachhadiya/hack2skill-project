@@ -1,5 +1,6 @@
 import { generateMockHealth } from '../utils/mockData';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { type CSSProperties } from 'react';
 import { CheckCircle, XCircle, AlertCircle, Wifi } from 'lucide-react';
 
 const health = generateMockHealth();
@@ -130,7 +131,7 @@ export default function SystemHealthPage() {
           { label: 'Data Freshness', value: '< 1 min', color: 'var(--color-accent)' },
           { label: 'Error Rate', value: '0.8%', color: 'var(--color-warning)' },
         ].map((m, i) => (
-          <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as React.CSSProperties}>
+          <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as CSSProperties}>
             <div className="metric-label">{m.label}</div>
             <div className="metric-value" style={{ color: m.color, fontSize: '1.7rem' }}>{m.value}</div>
           </div>
@@ -139,3 +140,4 @@ export default function SystemHealthPage() {
     </div>
   );
 }
+

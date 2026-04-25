@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { useDisruptions } from '../hooks/useDisruptions';
 import { DISRUPTION_COLORS } from '../utils/constants';
-import { formatDate, formatPercent, riskColor, timeAgo } from '../utils/formatters';
-import { Bell, CheckCircle, AlertTriangle, Filter } from 'lucide-react';
+import { formatDate, formatPercent } from '../utils/formatters';
+import { Bell, Filter } from 'lucide-react';
 
 export default function AlertsPage() {
   const { data: disruptions = [], refetch } = useDisruptions();
@@ -29,7 +29,7 @@ export default function AlertsPage() {
           { label: 'Critical', value: criticalCount, color: 'var(--color-danger)' },
           { label: 'Resolved', value: disruptions.filter(d => d.status === 'resolved').length, color: 'var(--color-success)' },
         ].map((m, i) => (
-          <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as React.CSSProperties}>
+          <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as CSSProperties}>
             <div className="metric-label">{m.label}</div>
             <div className="metric-value" style={{ color: m.color }}>{m.value}</div>
           </div>
@@ -136,3 +136,5 @@ export default function AlertsPage() {
     </div>
   );
 }
+
+

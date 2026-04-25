@@ -21,10 +21,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
-
 from app.config import get_settings
-from app.database import get_db
+# from app.database import get_db  # No longer needed for Beanie
 from app.ml.model_evaluation import build_mock_performance_report
 from app.models.disruption import DisruptionPrediction
 from app.models.shipment import Shipment
@@ -145,10 +143,9 @@ async def health_check() -> Dict:
 )
 async def get_shipments(
     limit: int = Query(75, ge=1, le=500),
-    db: Session = Depends(get_db),
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Return shipment data in the shape used by the frontend."""
-    records = db.query(Shipment).order_by(Shipment.created_at.desc()).limit(limit).all()
+    records = await Shipment.find_all().sort("-created_at").limit(limit).to_list()
     shipments = [_serialize_shipment_record(record) for record in records]
     if not shipments:
         shipments = _generate_sample_shipments(limit)
@@ -282,7 +279,6 @@ async def get_disruptions(
     severity: Optional[str] = Query(None, description="low|medium|high|critical"),
     disruption_type: Optional[str] = Query(None, description="Filter by disruption type"),
     limit: int = Query(50, ge=1, le=500),
-    db: Session = Depends(get_db),
 ) -> Dict:
     """
     Returns active disruption predictions. Checks Redis cache first,
@@ -294,20 +290,17 @@ async def get_disruptions(
         disruptions = cached
     else:
         # Fallback to DB
-        query = db.query(DisruptionPrediction).filter(
-            DisruptionPrediction.status == "active"
-        )
+        filters = {"status": "active"}
         if location:
-            query = query.filter(
-                DisruptionPrediction.location.ilike(f"%{location}%")
-            )
+            filters["location"] = {"$regex": location, "$options": "i"}
         if disruption_type:
-            query = query.filter(
-                DisruptionPrediction.disruption_type == disruption_type
-            )
-        records = query.order_by(
-            DisruptionPrediction.probability.desc()
-        ).limit(limit).all()
+            filters["disruption_type"] = disruption_type
+        
+        try:
+            records = await DisruptionPrediction.find(filters).sort("-probability").limit(limit).to_list()
+        except Exception as exc:
+            logger.warning(f"Disruption lookup fallback used: {exc}")
+            records = []
 
         disruptions = [
             {
@@ -346,7 +339,6 @@ async def get_disruptions(
 )
 async def analyze_shipment(
     request: ShipmentAnalysisRequest,
-    db: Session = Depends(get_db),
 ) -> Dict:
     """
     Accepts a shipment request and returns a full risk analysis including:
@@ -393,8 +385,7 @@ async def analyze_shipment(
             departure_time=request.departure_time,
             current_status="pending",
         )
-        db.add(shipment)
-        db.commit()
+        await shipment.insert()
     except Exception as exc:
         logger.warning(f"Shipment DB write failed: {exc}")
 
@@ -565,3 +556,7 @@ async def trigger_ingestion(background_tasks: BackgroundTasks) -> Dict:
 
     background_tasks.add_task(_run)
     return {"message": "Data ingestion triggered in background.", "status": "accepted"}
+
+
+
+

@@ -26,7 +26,7 @@ from loguru import logger
 from app.api.routes import router
 from app.api.websocket import websocket_disruptions
 from app.config import get_settings
-from app.database import create_all_tables
+from app.database import init_db
 
 settings = get_settings()
 
@@ -67,11 +67,11 @@ async def lifespan(app: FastAPI):
     # Ensure model storage directory exists
     Path(settings.MODEL_STORAGE_PATH).mkdir(parents=True, exist_ok=True)
 
-    # Create DB tables
+    # Initialize MongoDB (Beanie)
     try:
-        create_all_tables()
+        await init_db()
     except Exception as exc:
-        logger.warning(f"DB table creation skipped (may already exist): {exc}")
+        logger.error(f"Database initialization failed: {exc}")
 
     # Start APScheduler
     try:

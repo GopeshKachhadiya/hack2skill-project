@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useShipments } from '../hooks/useShipments';
-import type { Shipment } from '../../types';
+import type { Shipment } from '../types';
 import { formatDate, formatCurrency, riskLabel, riskColor } from '../utils/formatters';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 export default function ShipmentsPage() {
   const { data: shipments = [], isLoading } = useShipments();
@@ -136,3 +136,4 @@ export default function ShipmentsPage() {
     </div>
   );
 }
+

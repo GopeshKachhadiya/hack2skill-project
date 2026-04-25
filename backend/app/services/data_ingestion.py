@@ -29,7 +29,7 @@ from loguru import logger
 
 from app.cache import cache_get, cache_set
 from app.config import get_settings
-from app.database import SessionLocal
+# from app.database import SessionLocal  # No longer needed
 from app.models.disruption import APICallLog
 from app.models.weather import WeatherData
 
@@ -40,6 +40,7 @@ settings = get_settings()
 async def _http_get_with_retry(
     url: str,
     params: Optional[Dict] = None,
+    headers: Optional[Dict] = None,
     max_retries: int = 3,
     timeout: float = 10.0,
 ) -> Optional[Dict]:
@@ -52,18 +53,18 @@ async def _http_get_with_retry(
         start_ms = int(time.time() * 1000)
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(url, params=params)
+                response = await client.get(url, params=params, headers=headers)
                 elapsed = int(time.time() * 1000) - start_ms
-                _log_api_call(url, response.status_code, elapsed)
+                await _log_api_call(url, response.status_code, elapsed)
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as exc:
             elapsed = int(time.time() * 1000) - start_ms
-            _log_api_call(url, exc.response.status_code, elapsed, str(exc))
+            await _log_api_call(url, exc.response.status_code, elapsed, str(exc))
             logger.warning(f"HTTP {exc.response.status_code} on attempt {attempt}: {url}")
         except Exception as exc:
             elapsed = int(time.time() * 1000) - start_ms
-            _log_api_call(url, 0, elapsed, str(exc))
+            await _log_api_call(url, 0, elapsed, str(exc))
             logger.warning(f"Request error attempt {attempt}: {exc}")
 
         if attempt < max_retries:
@@ -73,7 +74,7 @@ async def _http_get_with_retry(
     return None
 
 
-def _log_api_call(
+async def _log_api_call(
     url: str,
     status_code: int,
     response_time_ms: int,
@@ -81,7 +82,6 @@ def _log_api_call(
 ) -> None:
     """Write one row to api_call_logs (best-effort, never raises)."""
     try:
-        db = SessionLocal()
         log = APICallLog(
             id=uuid.uuid4(),
             api_source=url.split("/")[2] if url else "unknown",
@@ -90,9 +90,7 @@ def _log_api_call(
             response_time_ms=response_time_ms,
             error_message=error,
         )
-        db.add(log)
-        db.commit()
-        db.close()
+        await log.insert()
     except Exception as exc:
         logger.debug(f"API call log write failed (non-critical): {exc}")
 
@@ -129,23 +127,36 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
         logger.debug(f"Weather cache HIT: {location}")
         return cached
 
-    url = "https://api.openweathermap.org/data/2.5/weather"
+    from app.api.routes import _coord_for_location
+    coords = _coord_for_location(location)
+
+    url = "https://api.open-meteo.com/v1/forecast"
     params = {
-        "q": location,
-        "appid": settings.OPENWEATHER_API_KEY,
-        "units": "metric",
+        "latitude": coords["lat"],
+        "longitude": coords["lng"],
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code",
     }
 
     raw = await _http_get_with_retry(url, params)
-    if raw is None:
+    if raw is None or "error" in raw:
         logger.warning(f"Weather API failed for location: {location}")
         return _mock_weather_data(location)
 
     try:
-        temp = raw["main"]["temp"]
-        humidity = raw["main"]["humidity"]
-        wind_speed = raw["wind"]["speed"]
-        condition = raw["weather"][0]["description"]
+        current = raw.get("current", {})
+        temp = current.get("temperature_2m", 20.0)
+        humidity = current.get("relative_humidity_2m", 50.0)
+        wind_speed = current.get("wind_speed_10m", 10.0)
+        code = current.get("weather_code", 0)
+
+        # Basic WMO Weather Code to String mapping
+        condition = "Clear"
+        if code in [1, 2, 3]: condition = "Cloudy"
+        elif code in [45, 48]: condition = "Fog"
+        elif code in [51, 53, 55, 56, 57]: condition = "Drizzle"
+        elif code in [61, 63, 65, 66, 67]: condition = "Rain"
+        elif code in [71, 73, 75, 77]: condition = "Snow"
+        elif code in [95, 96, 99]: condition = "Thunderstorm"
 
         severity = _classify_weather_severity(temp, wind_speed, condition)
 
@@ -160,8 +171,8 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
         }
 
         # Persist to DB
+        # Persist to DB
         try:
-            db = SessionLocal()
             record = WeatherData(
                 id=uuid.uuid4(),
                 location=location,
@@ -173,9 +184,7 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
                 raw_response=json.dumps(raw)[:2000],
                 timestamp=datetime.now(timezone.utc),
             )
-            db.add(record)
-            db.commit()
-            db.close()
+            await record.insert()
         except Exception as exc:
             logger.warning(f"Weather DB write failed: {exc}")
 
@@ -207,7 +216,7 @@ def _mock_weather_data(location: str) -> Dict:
 
 async def fetch_traffic_data(origin: str, destination: str) -> Optional[Dict]:
     """
-    Fetch traffic/directions data from Google Maps Directions API.
+    Fetch traffic/directions data from OpenRouteService API.
     Falls back to mock data if the API key is not configured.
     """
     cache_key = f"traffic:{origin.lower()}:{destination.lower()}"
@@ -216,33 +225,41 @@ async def fetch_traffic_data(origin: str, destination: str) -> Optional[Dict]:
         logger.debug(f"Traffic cache HIT: {origin} → {destination}")
         return cached
 
-    if not settings.GOOGLE_MAPS_API_KEY or settings.GOOGLE_MAPS_API_KEY.startswith("your_"):
+    if not settings.OPENROUTESERVICE_API_KEY or settings.OPENROUTESERVICE_API_KEY.startswith("your_"):
         return _mock_traffic_data(origin, destination)
 
-    url = "https://maps.googleapis.com/maps/api/directions/json"
+    from app.api.routes import _coord_for_location
+    orig_coords = _coord_for_location(origin)
+    dest_coords = _coord_for_location(destination)
+
+    url = "https://api.openrouteservice.org/v2/directions/driving-car"
     params = {
-        "origin": origin,
-        "destination": destination,
-        "departure_time": "now",
-        "traffic_model": "best_guess",
-        "key": settings.GOOGLE_MAPS_API_KEY,
+        "start": f"{orig_coords['lng']},{orig_coords['lat']}",
+        "end": f"{dest_coords['lng']},{dest_coords['lat']}",
+    }
+    headers = {
+        "Authorization": settings.OPENROUTESERVICE_API_KEY
     }
 
-    raw = await _http_get_with_retry(url, params)
-    if raw is None or raw.get("status") != "OK":
+    raw = await _http_get_with_retry(url, params=params, headers=headers)
+    if raw is None or "error" in raw:
         logger.warning(f"Traffic API failed for route: {origin} → {destination}")
         return _mock_traffic_data(origin, destination)
 
     try:
-        leg = raw["routes"][0]["legs"][0]
-        duration_s = leg["duration"]["value"]
-        duration_traffic_s = leg.get("duration_in_traffic", {}).get("value", duration_s)
-        delay_ratio = (duration_traffic_s - duration_s) / max(duration_s, 1)
+        summary = raw["features"][0]["properties"]["summary"]
+        duration_s = summary["duration"]
+        distance_m = summary["distance"]
+        
+        import random
+        # ORS free tier doesn't have real-time traffic delay, so we simulate it
+        delay_ratio = random.uniform(0.0, 0.4)
+        duration_traffic_s = duration_s * (1 + delay_ratio)
 
         structured = {
             "origin": origin,
             "destination": destination,
-            "distance_km": round(leg["distance"]["value"] / 1000, 2),
+            "distance_km": round(distance_m / 1000, 2),
             "normal_duration_min": round(duration_s / 60, 1),
             "traffic_duration_min": round(duration_traffic_s / 60, 1),
             "delay_ratio": round(delay_ratio, 3),

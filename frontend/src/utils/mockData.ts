@@ -13,7 +13,7 @@ function randomBetween(min: number, max: number): number {
   return Math.random() * (max - min) + min;
 }
 
-function randomItem<T>(arr: T[]): T {
+function randomItem<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
@@ -25,9 +25,8 @@ function hoursAgo(h: number): string {
   return new Date(Date.now() - h * 3600000).toISOString();
 }
 
-// Generate 70+ mock shipments
 export function generateMockShipments(count = 75): Shipment[] {
-  const statuses: Shipment['status'][] = ['on_time', 'delayed', 'critical', 'delivered', 'disrupted'];
+  const statuses: Shipment['currentStatus'][] = ['on_time', 'delayed', 'critical', 'delivered', 'disrupted'];
   const statusWeights = [0.45, 0.25, 0.1, 0.1, 0.1];
 
   function pickStatus(): Shipment['currentStatus'] {
@@ -35,7 +34,7 @@ export function generateMockShipments(count = 75): Shipment[] {
     let cum = 0;
     for (let i = 0; i < statuses.length; i++) {
       cum += statusWeights[i];
-      if (r < cum) return statuses[i] as Shipment['currentStatus'];
+      if (r < cum) return statuses[i];
     }
     return 'on_time';
   }
@@ -53,7 +52,6 @@ export function generateMockShipments(count = 75): Shipment[] {
       ? randomBetween(0.35, 0.65)
       : randomBetween(0, 0.35);
 
-    // Interpolate current position between origin and destination
     const progress = Math.random();
     const currentCoords = {
       lat: origin.latitude + (destination.latitude - origin.latitude) * progress,
@@ -72,7 +70,7 @@ export function generateMockShipments(count = 75): Shipment[] {
       currentStatus: status,
       cargoType: randomItem(CARGO_TYPES),
       cargoValue: Math.round(randomBetween(50000, 5000000)),
-      priority: randomItem(['normal', 'urgent', 'time-sensitive']),
+      priority: randomItem(['normal', 'urgent', 'time-sensitive'] as const),
       riskScore,
       delay,
       route: [
@@ -80,11 +78,10 @@ export function generateMockShipments(count = 75): Shipment[] {
         currentCoords,
         { lat: destination.latitude, lng: destination.longitude },
       ],
-    } as Shipment;
+    } satisfies Shipment;
   });
 }
 
-// Generate mock disruptions
 export function generateMockDisruptions(count = 12): Disruption[] {
   return Array.from({ length: count }, (_, i) => {
     const location = randomItem(SHIPPING_NODES);
@@ -108,7 +105,7 @@ export function generateMockDisruptions(count = 12): Disruption[] {
       affectedShipments: Math.round(randomBetween(2, 30)),
       radius: randomBetween(50, 500),
       status: Math.random() > 0.2 ? 'active' : 'resolved',
-    } as Disruption;
+    } satisfies Disruption;
   });
 }
 
@@ -124,7 +121,6 @@ function getRecommendation(type: string): string {
   return recs[type] || 'Assess situation and consult operations team';
 }
 
-// Generate 72-hour forecast time series
 export function generateMockForecast(location: string): ForecastSeries {
   const now = Date.now();
   const data: ForecastDataPoint[] = Array.from({ length: 73 }, (_, i) => {
@@ -147,7 +143,6 @@ export function generateMockForecast(location: string): ForecastSeries {
   };
 }
 
-// Generate mock model performance
 export function generateMockPerformance(): ModelPerformanceMetrics {
   return {
     modelAccuracy: {
@@ -167,7 +162,6 @@ export function generateMockPerformance(): ModelPerformanceMetrics {
   };
 }
 
-// Generate mock system health
 export function generateMockHealth(): SystemHealth {
   return {
     backendApi: { status: 'online', responseTime: Math.round(randomBetween(80, 300)) },

@@ -15,7 +15,7 @@ from loguru import logger
 
 from app.cache import cache_get, cache_set
 from app.config import get_settings
-from app.database import SessionLocal
+# from app.database import SessionLocal  # No longer needed
 from app.models.disruption import DisruptionPrediction
 from app.models.shipment import Shipment
 
@@ -132,7 +132,7 @@ async def predict_disruptions(locations: Optional[List[str]] = None) -> List[Dic
             logger.error(f"Prediction failed for {location}: {exc}")
 
     # ── Persist to DB ─────────────────────────────────────────────────────────
-    _persist_predictions(active_disruptions)
+    await _persist_predictions(active_disruptions)
 
     # ── Update cache ──────────────────────────────────────────────────────────
     cache_set("active_disruptions", active_disruptions, ttl=900)
@@ -164,12 +164,11 @@ def _adjust_probability_by_type(
     return min(base_prob * m, 1.0)
 
 
-def _persist_predictions(disruptions: List[Dict]) -> None:
-    """Bulk-insert active disruption predictions into PostgreSQL."""
+async def _persist_predictions(disruptions: List[Dict]) -> None:
+    """Bulk-insert active disruption predictions into MongoDB."""
     if not disruptions:
         return
     try:
-        db = SessionLocal()
         records = []
         for d in disruptions:
             tw = d.get("predicted_time_window", {})
@@ -190,9 +189,7 @@ def _persist_predictions(disruptions: List[Dict]) -> None:
                 affected_shipments_count=d.get("affected_shipments", 0),
                 status="active",
             ))
-        db.bulk_save_objects(records)
-        db.commit()
-        db.close()
+        await DisruptionPrediction.insert_many(records)
         logger.debug(f"Persisted {len(records)} disruption predictions.")
     except Exception as exc:
         logger.warning(f"Disruption DB persist failed: {exc}")

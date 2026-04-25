@@ -178,7 +178,7 @@ function heuristic(node: Node, goal: Node): number {
 // A* Core Algorithm
 // ─────────────────────────────────────────────────────────────────────────────
 
-function reconstructPath(endNode: AStarNode, nodeMap: Map<string, AStarNode>): string[] {
+function reconstructPath(endNode: AStarNode): string[] {
   const path: string[] = [];
   let current: AStarNode | null = endNode;
   while (current) {
@@ -220,7 +220,7 @@ export function aStar(
     const current = openHeap.pop()!;
 
     if (current.id === goalId) {
-      return reconstructPath(current, nodeMap);
+      return reconstructPath(current);
     }
 
     closedSet.add(current.id);
@@ -329,3 +329,4 @@ export function optimizeRoute(
 
   return { optimized, original };
 }
+

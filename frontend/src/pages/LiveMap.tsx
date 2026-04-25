@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useShipments } from '../hooks/useShipments';
 import { useDisruptions } from '../hooks/useDisruptions';
 import ShipmentMap from '../components/Map/ShipmentMap';
-import type { Shipment } from '../../types';
-import { STATUS_COLORS } from '../utils/constants';
+import type { Shipment } from '../types';
 import { formatDate, formatCurrency, riskLabel, riskColor } from '../utils/formatters';
 
 export default function LiveMapPage() {
@@ -83,7 +82,7 @@ export default function LiveMapPage() {
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: 8 }}>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{item.label}</span>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: (item as any).highlight || 'var(--text-primary)' }}>{item.value}</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: ('highlight' in item ? item.highlight : undefined) || 'var(--text-primary)' }}>{item.value}</span>
                 </div>
               ))}
 
@@ -107,3 +106,5 @@ export default function LiveMapPage() {
     </div>
   );
 }
+
+

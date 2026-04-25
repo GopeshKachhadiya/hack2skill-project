@@ -23,10 +23,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_PREFIX: str = "/api/v1"
 
-    # ── PostgreSQL ─────────────────────────────────────────────
-    DATABASE_URL: str = (
-        "postgresql://postgres:password@localhost:5432/supply_chain"
-    )
+    # ── MongoDB ────────────────────────────────────────────────
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "nexus_supply_chain"
 
     # ── Redis ──────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -40,8 +39,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
     # ── External API Keys ─────────────────────────────────────
-    OPENWEATHER_API_KEY: str = "your_openweather_api_key_here"
-    GOOGLE_MAPS_API_KEY: str = "your_google_maps_api_key_here"
+    OPENROUTESERVICE_API_KEY: str = "your_openrouteservice_api_key_here"
 
     # ── Prophet Model Storage ──────────────────────────────────
     MODEL_STORAGE_PATH: str = "./models"

@@ -1,12 +1,11 @@
 import { useState, useMemo } from 'react';
 import { SHIPPING_NODES, SHIPPING_EDGES } from '../utils/constants';
-import { Graph, optimizeRoute, type CostWeights } from '../utils/astar';
-import { nodeToCoord } from '../utils/geo';
-import type { RouteOptimizationResult, RouteConstraints } from '../../types';
+import { Graph, optimizeRoute } from '../utils/astar';
+import type { RouteOptimizationResult, RouteConstraints } from '../types';
 import { formatDuration, formatDistance, formatCurrency } from '../utils/formatters';
 import ShipmentMap from '../components/Map/ShipmentMap';
 import { useDisruptions } from '../hooks/useDisruptions';
-import { Zap, ArrowRight, CheckCircle, BarChart2 } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // Build the global shipping graph once
@@ -285,3 +284,4 @@ function RouteMetrics({ route, color }: { route: RouteOptimizationResult['optimi
     </div>
   );
 }
+

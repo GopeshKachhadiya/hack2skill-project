@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Map, BarChart3, Zap, Bell, Settings, Package, Shield
+  LayoutDashboard, Map, BarChart3, Zap, Bell, Package, Shield
 } from 'lucide-react';
 import { useDisruptions } from '../../hooks/useDisruptions';
 
@@ -58,3 +58,4 @@ export default function Sidebar() {
     </nav>
   );
 }
+

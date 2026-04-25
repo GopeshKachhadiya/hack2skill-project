@@ -1,7 +1,7 @@
 import { generateMockPerformance, generateMockForecast } from '../utils/mockData';
 import { SHIPPING_NODES } from '../utils/constants';
-import { useState } from 'react';
-import { formatDate, formatPercent } from '../utils/formatters';
+import { useState, type CSSProperties } from 'react';
+import { formatDate } from '../utils/formatters';
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend
@@ -52,7 +52,7 @@ export default function AnalyticsPage() {
             { label: 'F1 Score', value: `${(perf.modelAccuracy.f1Score * 100).toFixed(1)}%`, color: 'var(--color-accent)', desc: 'Harmonic mean of P & R' },
             { label: 'MAPE', value: `${perf.modelAccuracy.mape.toFixed(1)}%`, color: 'var(--color-warning)', desc: 'Mean absolute percentage error' },
           ].map((m, i) => (
-            <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as React.CSSProperties}>
+            <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as CSSProperties}>
               <div className="metric-label">{m.label}</div>
               <div className="metric-value" style={{ color: m.color, fontSize: '1.8rem' }}>{m.value}</div>
               <div className="metric-sub">{m.desc}</div>
@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
           { label: 'Correct', value: perf.coverage.correctPredictions.toLocaleString(), color: 'var(--color-success)', desc: 'Accurate predictions' },
           { label: 'False Positives', value: perf.coverage.falsePositives.toString(), color: 'var(--color-warning)', desc: 'Over-predictions' },
         ].map((m, i) => (
-          <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as React.CSSProperties}>
+          <div key={i} className="glass-card metric-card" style={{ '--accent-color': m.color } as CSSProperties}>
             <div className="metric-label">{m.label}</div>
             <div className="metric-value" style={{ color: m.color, fontSize: '1.7rem' }}>{m.value}</div>
             <div className="metric-sub">{m.desc}</div>
@@ -150,3 +150,4 @@ export default function AnalyticsPage() {
     </div>
   );
 }
+
