@@ -1,9 +1,10 @@
 """
-cache.py — Redis connection pool + helper utilities.
+cache.py — Redis connection pool with local memory fallback.
 """
 
 import json
-from typing import Any, Optional
+import time
+from typing import Any, Optional, Dict, Tuple
 
 import redis
 from loguru import logger
@@ -14,71 +15,123 @@ settings = get_settings()
 
 # ── Connection pool (shared across the process) ───────────────────────────────
 _pool: Optional[redis.ConnectionPool] = None
+_redis_available = True
+_last_check = 0
 
+# ── Local Memory Fallback ──────────────────────────────────────────────────
+# Format: {key: (value_json, expiry_timestamp)}
+_memory_cache: Dict[str, Tuple[str, float]] = {}
 
-def get_redis_pool() -> redis.ConnectionPool:
-    """Return (and lazily create) the global Redis connection pool."""
-    global _pool
+def get_redis_pool() -> Optional[redis.ConnectionPool]:
+    """Return the global Redis connection pool. Returns None if Redis is unavailable."""
+    global _pool, _redis_available, _last_check
+    
+    # Retry Redis every 60 seconds if it was down
+    now = time.time()
+    if not _redis_available and (now - _last_check < 60):
+        return None
+    
+    _last_check = now
+    
     if _pool is None:
-        _pool = redis.ConnectionPool.from_url(
-            settings.REDIS_URL,
-            decode_responses=True,
-            max_connections=50,
-        )
-        logger.info("✅ Redis connection pool initialised.")
+        try:
+            _pool = redis.ConnectionPool.from_url(
+                settings.REDIS_URL,
+                decode_responses=True,
+                max_connections=50,
+                socket_connect_timeout=1, # Don't hang if Redis is down
+            )
+            # Test connection
+            client = redis.Redis(connection_pool=_pool)
+            client.ping()
+            _redis_available = True
+            logger.info("✅ Redis connection pool initialised.")
+        except Exception as exc:
+            _redis_available = False
+            _pool = None
+            logger.warning(f"⚠️ Redis unavailable, using in-memory fallback. Error: {exc}")
+    
     return _pool
 
-
-def get_redis_client() -> redis.Redis:
-    """Return a Redis client backed by the global pool."""
-    return redis.Redis(connection_pool=get_redis_pool())
-
+def get_redis_client() -> Optional[redis.Redis]:
+    """Return a Redis client or None if Redis is unavailable."""
+    pool = get_redis_pool()
+    if pool:
+        return redis.Redis(connection_pool=pool)
+    return None
 
 # ── Cache helpers ─────────────────────────────────────────────────────────────
 
 def cache_set(key: str, value: Any, ttl: int = 300) -> bool:
-    """
-    Serialise *value* to JSON and store it at *key* with *ttl* seconds TTL.
-    Returns True on success, False on error.
-    """
-    try:
-        client = get_redis_client()
-        client.setex(key, ttl, json.dumps(value, default=str))
-        return True
-    except Exception as exc:
-        logger.warning(f"Redis SET failed for key={key!r}: {exc}")
-        return False
-
+    """Stores value in Redis or in-memory fallback."""
+    val_json = json.dumps(value, default=str)
+    
+    # Try Redis
+    client = get_redis_client()
+    if client:
+        try:
+            client.setex(key, ttl, val_json)
+            return True
+        except Exception:
+            pass # Fall through to memory
+            
+    # Memory fallback
+    _memory_cache[key] = (val_json, time.time() + ttl)
+    return True
 
 def cache_get(key: str) -> Optional[Any]:
-    """
-    Retrieve and deserialise the JSON value stored at *key*.
-    Returns None on cache miss or error.
-    """
-    try:
-        client = get_redis_client()
-        raw = client.get(key)
-        if raw is None:
-            return None
-        return json.loads(raw)
-    except Exception as exc:
-        logger.warning(f"Redis GET failed for key={key!r}: {exc}")
-        return None
-
+    """Retrieves value from Redis or in-memory fallback."""
+    # Try Redis
+    client = get_redis_client()
+    if client:
+        try:
+            raw = client.get(key)
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass # Fall through to memory
+            
+    # Memory fallback
+    if key in _memory_cache:
+        val_json, expiry = _memory_cache[key]
+        if time.time() < expiry:
+            return json.loads(val_json)
+        else:
+            del _memory_cache[key]
+            
+    return None
 
 def cache_delete(key: str) -> bool:
-    """Delete *key* from Redis. Returns True if deleted, False otherwise."""
-    try:
-        client = get_redis_client()
-        return bool(client.delete(key))
-    except Exception as exc:
-        logger.warning(f"Redis DELETE failed for key={key!r}: {exc}")
-        return False
-
+    """Deletes key from Redis and memory."""
+    deleted = False
+    client = get_redis_client()
+    if client:
+        try:
+            deleted = bool(client.delete(key))
+        except Exception:
+            pass
+            
+    if key in _memory_cache:
+        del _memory_cache[key]
+        deleted = True
+        
+    return deleted
 
 def cache_exists(key: str) -> bool:
-    """Return True if *key* exists in Redis."""
-    try:
-        return bool(get_redis_client().exists(key))
-    except Exception:
-        return False
+    """Checks if key exists in Redis or memory."""
+    client = get_redis_client()
+    if client:
+        try:
+            if client.exists(key):
+                return True
+        except Exception:
+            pass
+            
+    if key in _memory_cache:
+        _, expiry = _memory_cache[key]
+        if time.time() < expiry:
+            return True
+        else:
+            del _memory_cache[key]
+            
+    return False

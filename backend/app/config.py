@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_PREFIX: str = "/api/v1"
 
-    # ── MongoDB ────────────────────────────────────────────────
-    MONGODB_URL: str = "mongodb://localhost:27017"
+    # ── Database ───────────────────────────────────────────────
+    DATABASE_URL: str = "sqlite:///./sql_app.db"
     MONGODB_DB_NAME: str = "nexus_supply_chain"
 
     # ── Redis ──────────────────────────────────────────────────
@@ -47,9 +47,9 @@ class Settings(BaseSettings):
     FORECAST_HORIZON_HOURS: int = 72
 
     # ── Disruption Thresholds ──────────────────────────────────
-    DISRUPTION_ALERT_THRESHOLD: float = 0.70
-    HIGH_RISK_THRESHOLD: float = 0.50
-    MEDIUM_RISK_THRESHOLD: float = 0.25
+    DISRUPTION_ALERT_THRESHOLD: float = 0.00
+    HIGH_RISK_THRESHOLD: float = 0.00
+    MEDIUM_RISK_THRESHOLD: float = 0.00
 
     # ── Scheduling Intervals ───────────────────────────────────
     DATA_INGESTION_INTERVAL_MINUTES: int = 15

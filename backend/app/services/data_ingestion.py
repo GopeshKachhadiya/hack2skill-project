@@ -83,7 +83,6 @@ async def _log_api_call(
     """Write one row to api_call_logs (best-effort, never raises)."""
     try:
         log = APICallLog(
-            id=uuid.uuid4(),
             api_source=url.split("/")[2] if url else "unknown",
             endpoint_url=url[:500],
             status_code=status_code,
@@ -96,15 +95,14 @@ async def _log_api_call(
 
 
 def _classify_weather_severity(
-    temp: float, wind_speed: float, condition: str
+    wave_height: float, wind_speed: float
 ) -> str:
-    """Return a severity label based on meteorological conditions."""
-    condition_lower = condition.lower()
-    if any(w in condition_lower for w in ["thunderstorm", "tornado", "hurricane"]):
+    """Return a severity label based on marine meteorological conditions."""
+    if wave_height > 4.0 or wind_speed > 25:
         return "critical"
-    if wind_speed > 25 or any(w in condition_lower for w in ["storm", "blizzard"]):
+    if wave_height > 2.5 or wind_speed > 15:
         return "high"
-    if wind_speed > 15 or temp < -10 or temp > 42:
+    if wave_height > 1.0 or wind_speed > 10:
         return "medium"
     return "low"
 
@@ -122,19 +120,21 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
     5. Return structured dict
     """
     cache_key = f"weather:{location.lower().replace(' ', '_')}"
-    cached = cache_get(cache_key)
+    cached = None # cache_get(cache_key)
     if cached:
         logger.debug(f"Weather cache HIT: {location}")
         return cached
 
-    from app.api.routes import _coord_for_location
+    from app.routing.constants import _coord_for_location
     coords = _coord_for_location(location)
 
-    url = "https://api.open-meteo.com/v1/forecast"
+    url = "https://marine-api.open-meteo.com/v1/marine"
     params = {
         "latitude": coords["lat"],
         "longitude": coords["lng"],
-        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code",
+        "hourly": "wave_height,wind_speed_10m",
+        "past_days": 0,
+        "forecast_days": 7,
     }
 
     raw = await _http_get_with_retry(url, params)
@@ -143,28 +143,26 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
         return _mock_weather_data(location)
 
     try:
-        current = raw.get("current", {})
-        temp = current.get("temperature_2m", 20.0)
-        humidity = current.get("relative_humidity_2m", 50.0)
-        wind_speed = current.get("wind_speed_10m", 10.0)
-        code = current.get("weather_code", 0)
-
-        # Basic WMO Weather Code to String mapping
-        condition = "Clear"
-        if code in [1, 2, 3]: condition = "Cloudy"
-        elif code in [45, 48]: condition = "Fog"
-        elif code in [51, 53, 55, 56, 57]: condition = "Drizzle"
-        elif code in [61, 63, 65, 66, 67]: condition = "Rain"
-        elif code in [71, 73, 75, 77]: condition = "Snow"
-        elif code in [95, 96, 99]: condition = "Thunderstorm"
-
-        severity = _classify_weather_severity(temp, wind_speed, condition)
+        hourly = raw.get("hourly", {})
+        
+        wave_heights = hourly.get("wave_height", [])
+        wind_speeds = hourly.get("wind_speed_10m", [])
+        
+        # Calculate 24-hour averages
+        valid_waves = [w for w in wave_heights[:24] if w is not None]
+        valid_winds = [w for w in wind_speeds[:24] if w is not None]
+        
+        wave_height = sum(valid_waves) / len(valid_waves) if valid_waves else 1.0
+        wind_speed = sum(valid_winds) / len(valid_winds) if valid_winds else 10.0
+        
+        condition = "Rough Seas" if wave_height > 2.5 else "Calm Seas"
+        
+        severity = _classify_weather_severity(wave_height, wind_speed)
 
         structured = {
             "location": location,
-            "temperature": temp,
-            "humidity": humidity,
-            "wind_speed": wind_speed,
+            "wave_height": round(wave_height, 2),
+            "wind_speed": round(wind_speed, 2),
             "weather_condition": condition,
             "severity": severity,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -174,10 +172,9 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
         # Persist to DB
         try:
             record = WeatherData(
-                id=uuid.uuid4(),
                 location=location,
-                temperature=temp,
-                humidity=humidity,
+                temperature=wave_height, # Store wave_height in temp column temporarily to avoid DB migration
+                humidity=0.0,
                 wind_speed=wind_speed,
                 weather_condition=condition,
                 severity=severity,
@@ -199,14 +196,15 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
 def _mock_weather_data(location: str) -> Dict:
     """Return plausible mock weather when the API is unavailable."""
     import random
-    conditions = ["Clear sky", "Partly cloudy", "Overcast", "Light rain"]
+    conditions = ["Calm Seas", "Moderate Waves", "Rough Seas"]
+    wave = round(random.uniform(0.5, 4.0), 1)
+    wind = round(random.uniform(2, 20), 1)
     return {
         "location": location,
-        "temperature": round(random.uniform(15, 35), 1),
-        "humidity": round(random.uniform(40, 90), 1),
-        "wind_speed": round(random.uniform(2, 20), 1),
+        "wave_height": wave,
+        "wind_speed": wind,
         "weather_condition": random.choice(conditions),
-        "severity": "low",
+        "severity": _classify_weather_severity(wave, wind),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "_mock": True,
     }
@@ -310,7 +308,7 @@ async def fetch_port_data() -> List[Dict]:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(rss_url)
-        soup = BeautifulSoup(resp.text, "lxml-xml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         items = soup.find_all("item")[:20]
         ports = []
         for item in items:

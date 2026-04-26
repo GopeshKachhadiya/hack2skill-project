@@ -1,30 +1,39 @@
 """
-database.py - MongoDB engine + Beanie ODM initialization.
+database.py — SQLite engine + SQLAlchemy ORM initialization.
 """
-
-from motor.motor_asyncio import AsyncIOMotorClient
-from beanie import init_beanie
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 from loguru import logger
 
 from app.config import get_settings
+from app.models.base import Base
 
 settings = get_settings()
-client = AsyncIOMotorClient(settings.MONGODB_URL)
-db = client[settings.MONGODB_DB_NAME]
 
+# Use database URL from settings
+SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 async def init_db() -> None:
-    from app.models.shipment import Shipment
-    from app.models.disruption import DisruptionPrediction, ProphetForecast, APICallLog, RouteHistory
-    from app.models.weather import WeatherData
-
-    logger.info("Initializing MongoDB connection via Beanie...")
+    """Initialize the database by creating all tables."""
+    logger.info("Initializing SQLite database via SQLAlchemy...")
     try:
-        await init_beanie(
-            database=db,
-            document_models=[Shipment, DisruptionPrediction, ProphetForecast, APICallLog, RouteHistory, WeatherData],
-        )
-        logger.success("MongoDB / Beanie initialization complete.")
+        # Create all tables defined in models
+        Base.metadata.create_all(bind=engine)
+        logger.success("SQLite database initialization complete.")
     except Exception as exc:
-        logger.error(f"MongoDB initialization failed: {exc}")
+        logger.error(f"Database initialization failed: {exc}")
         raise
+
+def get_db():
+    """Dependency for getting a DB session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

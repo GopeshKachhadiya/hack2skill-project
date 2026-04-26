@@ -8,6 +8,8 @@ const MOCK = generateMockDisruptions(12);
 type ApiDisruption = {
   id: string;
   location: string;
+  coords?: { lat: number; lng: number };
+  radius?: number;
   disruption_type: string;
   predicted_severity: number;
   probability: number;
@@ -39,7 +41,7 @@ function normalizeDisruption(disruption: ApiDisruption): Disruption {
   return {
     id: disruption.id,
     location: disruption.location,
-    coords: fallbackCoords(disruption.location),
+    coords: disruption.coords ?? fallbackCoords(disruption.location),
     disruptionType: disruption.disruption_type as Disruption['disruptionType'],
     predictedSeverity: disruption.predicted_severity,
     probability: disruption.probability,
@@ -50,7 +52,7 @@ function normalizeDisruption(disruption: ApiDisruption): Disruption {
     confidenceScore: disruption.confidence_score,
     recommendedAction: disruption.recommended_action ?? 'Monitor situation closely.',
     affectedShipments: disruption.affected_shipments ?? 0,
-    radius: 180,
+    radius: disruption.radius ?? (180 + disruption.predicted_severity * 200),
     status: disruption.status,
   };
 }

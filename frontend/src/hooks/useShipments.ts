@@ -22,3 +22,4 @@ export function useShipments() {
     staleTime: 15000,
   });
 }
+

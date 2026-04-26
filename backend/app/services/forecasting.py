@@ -30,7 +30,7 @@ DEFAULT_LOCATIONS = [
 
 async def generate_location_forecast(location: str, horizon_hours: int = 72) -> Dict:
     cache_key = f"forecast:{location.lower().replace(' ', '_')}:{horizon_hours}h"
-    cached = cache_get(cache_key)
+    cached = None # cache_get(cache_key)
     if cached:
         logger.debug(f"Forecast cache HIT: {location}")
         return cached
@@ -100,7 +100,6 @@ async def _persist_forecasts(location: str, series: List[Dict]) -> None:
         now = datetime.now(timezone.utc)
         records = [
             ProphetForecast(
-                id=uuid.uuid4(),
                 disruption_type="disruption_likelihood",
                 location=location,
                 forecast_value=pt["forecast_value"],

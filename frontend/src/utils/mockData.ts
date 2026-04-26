@@ -175,3 +175,4 @@ export function generateMockHealth(): SystemHealth {
     overallHealth: Math.round(randomBetween(85, 99)),
   };
 }
+

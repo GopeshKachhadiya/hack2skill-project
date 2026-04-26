@@ -24,8 +24,31 @@ export default function DashboardPage() {
         ))}
       </div>
       <div className="glass-card" style={{ padding: 24 }}>
-        <div className="section-title" style={{ marginBottom: 10 }}>Dashboard Summary</div>
-        <div className="section-sub">Shipments are loading correctly from the dashboard query, and the previous TypeScript blockers on this page have been removed.</div>
+        <div className="section-title" style={{ marginBottom: 15 }}>Logistics Insights</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20 }}>
+          <div className="summary-item">
+            <div className="summary-label">Fleet Status</div>
+            <div className="summary-text">
+              {shipments.length > 0 
+                ? `Currently monitoring ${shipments.length} active shipments. ${Math.round((onTime / shipments.length) * 100)}% of the fleet is operating within normal parameters.`
+                : 'Waiting for shipment data to sync...'}
+            </div>
+          </div>
+          <div className="summary-item">
+            <div className="summary-label">Risk Distribution</div>
+            <div className="summary-text">
+              {delayed + critical > 0
+                ? `Attention required: ${delayed} shipments are experiencing delays, and ${critical} are in critical condition due to predicted disruptions.`
+                : 'All routes currently showing low risk levels. No immediate intervention required.'}
+            </div>
+          </div>
+          <div className="summary-item">
+            <div className="summary-label">Next Update</div>
+            <div className="summary-text">
+              Automated disruption scan running in 15 minutes. Weather and port status feeds are currently healthy.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -92,7 +92,15 @@ async def predict_disruptions(locations: Optional[List[str]] = None) -> List[Dic
 
             for point in points:
                 prob = point.get("disruption_likelihood", 0.0)
+                weather_sev = point.get("weather_severity", 0.0)
+                
+                # Directly boost probability using real-time marine weather severity
+                if weather_sev >= 0.4:
+                    prob = max(prob, weather_sev)
+                
                 sev = point.get("disruption_severity", prob * 0.8)
+                if weather_sev >= 0.4:
+                    sev = max(sev, weather_sev)
 
                 if prob < settings.DISRUPTION_ALERT_THRESHOLD:
                     continue  # below alert threshold
@@ -173,7 +181,7 @@ async def _persist_predictions(disruptions: List[Dict]) -> None:
         for d in disruptions:
             tw = d.get("predicted_time_window", {})
             records.append(DisruptionPrediction(
-                id=uuid.UUID(d["id"]),
+                id=d["id"],
                 disruption_type=d["disruption_type"],
                 location=d["location"],
                 predicted_severity=d["predicted_severity"],

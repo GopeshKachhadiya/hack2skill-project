@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 import random
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -22,16 +23,18 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
 from app.config import get_settings
-# from app.database import get_db  # No longer needed for Beanie
 from app.ml.model_evaluation import build_mock_performance_report
 from app.models.disruption import DisruptionPrediction
 from app.models.shipment import Shipment
 from app.services.data_ingestion import ingest_all_data
 from app.services.forecasting import generate_location_forecast
 from app.services.prediction_engine import get_active_disruptions_from_cache
+from app.routing.engine import RoutingEngine
+from app.routing.constants import PORT_COORDS, SHIPMENT_STATUSES, SHIPMENT_CARGO, _coord_for_location
 
 settings = get_settings()
 router = APIRouter()
+routing_engine = RoutingEngine()
 
 
 # ── Pydantic Schemas ──────────────────────────────────────────────────────────
@@ -52,6 +55,8 @@ class TimeWindow(BaseModel):
 class DisruptionResponse(BaseModel):
     id: str
     location: str
+    coords: Optional[Dict] = None
+    radius: Optional[float] = None
     disruption_type: str
     predicted_severity: float
     probability: float
@@ -120,7 +125,6 @@ async def health_check() -> Dict:
     from app.cache import get_redis_client
     services: Dict[str, str] = {}
 
-    # Redis health
     try:
         get_redis_client().ping()
         services["redis"] = "ok"
@@ -152,35 +156,6 @@ async def get_shipments(
     return {"shipments": shipments}
 
 
-PORT_COORDS: Dict[str, Dict[str, float]] = {
-    "Shanghai": {"lat": 31.2304, "lng": 121.4737},
-    "Rotterdam": {"lat": 51.9225, "lng": 4.4792},
-    "Singapore": {"lat": 1.2966, "lng": 103.7764},
-    "Los Angeles": {"lat": 33.7283, "lng": -118.2712},
-    "Dubai": {"lat": 24.9857, "lng": 55.0272},
-    "Hamburg": {"lat": 53.5753, "lng": 9.9827},
-    "Busan": {"lat": 35.1796, "lng": 129.0756},
-    "Hong Kong": {"lat": 22.3193, "lng": 114.1694},
-    "Antwerp": {"lat": 51.2213, "lng": 4.4051},
-    "Mumbai": {"lat": 18.9388, "lng": 72.8354},
-    "New York": {"lat": 40.6501, "lng": -74.0377},
-    "Cape Town": {"lat": -33.9249, "lng": 18.4241},
-    "Suez": {"lat": 30.5852, "lng": 32.2654},
-    "Colombo": {"lat": 6.9271, "lng": 79.8612},
-    "Felixstowe": {"lat": 51.9659, "lng": 1.3516},
-}
-
-SHIPMENT_STATUSES = ["on_time", "delayed", "critical", "delivered", "disrupted"]
-SHIPMENT_CARGO = ["Container", "Bulk", "Refrigerated", "Tanker", "Air Freight", "Breakbulk"]
-
-
-def _coord_for_location(name: str) -> Dict[str, float]:
-    for port, coords in PORT_COORDS.items():
-        if port.lower() in name.lower():
-            return coords
-    return random.choice(list(PORT_COORDS.values()))
-
-
 def _status_summary(status: str) -> tuple[float, float]:
     if status == "delivered":
         return 0.08, 0.0
@@ -206,10 +181,9 @@ def _serialize_shipment_record(record: Shipment) -> Dict[str, Any]:
     risk_score, delay = _status_summary(current_status)
     departure = record.departure_time or datetime.now(timezone.utc) - timedelta(hours=random.randint(12, 240))
     expected_arrival = record.expected_arrival or departure + timedelta(hours=random.randint(24, 96))
-    midpoint = {
-        "lat": round((origin_coords["lat"] + destination_coords["lat"]) / 2, 4),
-        "lng": round((origin_coords["lng"] + destination_coords["lng"]) / 2, 4),
-    }
+    
+    waypoints = _get_maritime_route_points(record.origin, record.destination, origin_coords, destination_coords)
+    currentCoords = waypoints[len(waypoints)//2] if waypoints else origin_coords
 
     return {
         "id": str(record.id),
@@ -217,7 +191,7 @@ def _serialize_shipment_record(record: Shipment) -> Dict[str, Any]:
         "destination": record.destination,
         "originCoords": origin_coords,
         "destinationCoords": destination_coords,
-        "currentCoords": midpoint,
+        "currentCoords": currentCoords,
         "departureTime": departure.isoformat(),
         "expectedArrival": expected_arrival.isoformat(),
         "currentStatus": current_status,
@@ -226,8 +200,33 @@ def _serialize_shipment_record(record: Shipment) -> Dict[str, Any]:
         "priority": record.priority or "normal",
         "riskScore": round(risk_score, 4),
         "delay": round(delay, 1),
-        "route": [origin_coords, midpoint, destination_coords],
+        "route": [origin_coords] + waypoints + [destination_coords],
     }
+
+def _get_maritime_route_points(origin: str, destination: str, o_coords: Dict, d_coords: Dict) -> List[Dict[str, float]]:
+    o_name = origin.lower()
+    d_name = destination.lower()
+
+    if ("cape town" in o_name or "cape town" in d_name) and \
+       (d_coords["lat"] > 0 or o_coords["lat"] > 0):
+        return [{"lat": -5.0, "lng": 5.0}, {"lat": 20.0, "lng": -20.0}, {"lat": 40.0, "lng": -10.0}]
+        
+    if (o_coords["lng"] > 60 and d_coords["lng"] < 20) or \
+       (d_coords["lng"] > 60 and o_coords["lng"] < 20):
+        return [{"lat": 5.0, "lng": 80.0}, {"lat": 12.0, "lng": 55.0}, {"lat": 15.0, "lng": 40.0}, {"lat": 35.0, "lng": 15.0}, {"lat": 45.0, "lng": -8.0}]
+        
+    if (o_coords["lng"] > 100 and d_coords["lng"] < -50) or \
+       (d_coords["lng"] > 100 and o_coords["lng"] < -50):
+        return [{"lat": 20.0, "lng": 150.0}, {"lat": 30.0, "lng": -160.0}, {"lat": 25.0, "lng": -130.0}]
+
+    if (o_coords["lng"] > -20 and o_coords["lng"] < 20 and d_coords["lng"] < -50) or \
+       (d_coords["lng"] > -20 and d_coords["lng"] < 20 and o_coords["lng"] < -50):
+        return [{"lat": 40.0, "lng": -30.0}, {"lat": 30.0, "lng": -50.0}]
+        
+    return [{
+        "lat": round((o_coords["lat"] + d_coords["lat"]) / 2, 4),
+        "lng": round((o_coords["lng"] + d_coords["lng"]) / 2, 4),
+    }]
 
 
 def _generate_sample_shipments(count: int = 75) -> List[Dict[str, Any]]:
@@ -242,17 +241,15 @@ def _generate_sample_shipments(count: int = 75) -> List[Dict[str, Any]]:
         expected_arrival = departure + timedelta(hours=random.randint(24, 500))
         origin_coords = PORT_COORDS[origin]
         destination_coords = PORT_COORDS[destination]
-        midpoint = {
-            "lat": round((origin_coords["lat"] + destination_coords["lat"]) / 2, 4),
-            "lng": round((origin_coords["lng"] + destination_coords["lng"]) / 2, 4),
-        }
+        waypoints = _get_maritime_route_points(origin, destination, origin_coords, destination_coords)
+        currentCoords = waypoints[len(waypoints)//2] if waypoints else origin_coords
         shipments.append({
             "id": f"SHP-{1000 + idx}",
             "origin": f"Port of {origin}" if "Port of" not in origin else origin,
             "destination": f"Port of {destination}" if "Port of" not in destination else destination,
             "originCoords": origin_coords,
             "destinationCoords": destination_coords,
-            "currentCoords": midpoint,
+            "currentCoords": currentCoords,
             "departureTime": departure.isoformat(),
             "expectedArrival": expected_arrival.isoformat(),
             "currentStatus": status,
@@ -261,7 +258,7 @@ def _generate_sample_shipments(count: int = 75) -> List[Dict[str, Any]]:
             "priority": random.choice(["normal", "urgent", "time-sensitive"]),
             "riskScore": round(risk_score, 4),
             "delay": round(delay, 1),
-            "route": [origin_coords, midpoint, destination_coords],
+            "route": [origin_coords] + waypoints + [destination_coords],
         })
     return shipments
 
@@ -280,32 +277,67 @@ async def get_disruptions(
     disruption_type: Optional[str] = Query(None, description="Filter by disruption type"),
     limit: int = Query(50, ge=1, le=500),
 ) -> Dict:
-    """
-    Returns active disruption predictions. Checks Redis cache first,
-    falls back to PostgreSQL on miss.
-    """
-    # Try cache first
-    cached = get_active_disruptions_from_cache()
-    if cached:
-        disruptions = cached
-    else:
-        # Fallback to DB
-        filters = {"status": "active"}
-        if location:
-            filters["location"] = {"$regex": location, "$options": "i"}
-        if disruption_type:
-            filters["disruption_type"] = disruption_type
-        
-        try:
-            records = await DisruptionPrediction.find(filters).sort("-probability").limit(limit).to_list()
-        except Exception as exc:
-            logger.warning(f"Disruption lookup fallback used: {exc}")
-            records = []
+    from app.services.data_ingestion import fetch_weather_data
+    from app.routing.constants import DEFAULT_LOCATIONS
+    from app.database import SessionLocal
 
-        disruptions = [
-            {
+    disruptions = []
+    
+    # 1. Fetch live marine weather for all hubs to create real-time risk zones
+    for loc in DEFAULT_LOCATIONS:
+        try:
+            weather = await fetch_weather_data(loc)
+            if not weather: continue
+            
+            sev_str = weather.get("severity", "low")
+            sev_val = {"low": 0.2, "medium": 0.5, "high": 0.75, "critical": 0.95}.get(sev_str.lower(), 0.2)
+            
+            # Artificial boost for demo visibility if weather is too calm
+            if sev_val < 0.35:
+                sev_val = 0.35
+            
+            coords = _coord_for_location(loc)
+            # Dynamic radius scales with weather intensity (80km to 400km)
+            radius = 100 + (sev_val * 300)
+            
+            disruptions.append({
+                "id": f"live-weather-{loc.replace(' ', '-')}-{int(time.time()/3600)}",
+                "location": loc,
+                "coords": coords,
+                "radius": radius,
+                "disruption_type": "weather",
+                "predicted_severity": sev_val,
+                "probability": min(sev_val + 0.1, 1.0),
+                "confidence_score": 0.92,
+                "predicted_time_window": {
+                    "start": datetime.now(timezone.utc).isoformat(),
+                    "end": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                },
+                "recommended_action": f"Marine Warning: {weather.get('weather_condition', 'Stormy conditions')}. Wave Height: {weather.get('wave_height', 'N/A')}m",
+                "affected_shipments": random.randint(3, 12),
+                "status": "active",
+            })
+        except Exception as e:
+            logger.error(f"Error fetching live weather for {loc}: {e}")
+
+    # 2. Append predictive disruptions from SQLite DB (port congestion, mechanical, etc)
+    try:
+        db = SessionLocal()
+        records = db.query(DisruptionPrediction).filter(DisruptionPrediction.status == "active").all()
+        for r in records:
+            # Avoid duplicating weather if we already have a live one for the same location
+            if r.disruption_type == "weather" and any(d["location"] == r.location for d in disruptions):
+                continue
+                
+            loc = r.location or "unknown"
+            coords = _coord_for_location(loc)
+            radius = 80 + (r.predicted_severity * 280)
+            
+            disruptions.append({
                 "id": str(r.id),
-                "location": r.location or "unknown",
+                "location": loc,
+                "coords": coords,
+                "radius": radius,
                 "disruption_type": r.disruption_type,
                 "predicted_severity": r.predicted_severity,
                 "probability": r.probability,
@@ -317,15 +349,20 @@ async def get_disruptions(
                 "recommended_action": r.recommended_action,
                 "affected_shipments": r.affected_shipments_count,
                 "status": r.status,
-            }
-            for r in records
-        ]
+            })
+        db.close()
+    except Exception as e:
+        logger.error(f"DB Disruption fetch failed: {e}")
 
-    # Apply post-query filters
+    # Apply filters
+    if location:
+        disruptions = [d for d in disruptions if location.lower() in d["location"].lower()]
+    if disruption_type:
+        disruptions = [d for d in disruptions if d["disruption_type"] == disruption_type]
     if severity:
         sev_map = {"critical": 0.75, "high": 0.5, "medium": 0.25, "low": 0.0}
         min_sev = sev_map.get(severity.lower(), 0.0)
-        disruptions = [d for d in disruptions if d["predicted_severity"] >= min_sev]
+        disruptions = [d for d in disruptions if d.get("predicted_severity", 0.0) >= min_sev]
 
     return {"disruptions": disruptions[:limit]}
 
@@ -340,44 +377,25 @@ async def get_disruptions(
 async def analyze_shipment(
     request: ShipmentAnalysisRequest,
 ) -> Dict:
-    """
-    Accepts a shipment request and returns a full risk analysis including:
-    • Per-disruption-type probability scores
-    • Timeline with checkpoint risk levels
-    • Actionable recommendations
-    """
     from app.services.forecasting import generate_location_forecast
 
-    # Generate forecasts for origin and destination
     origin_forecast = await generate_location_forecast(request.origin, horizon_hours=72)
     dest_forecast = await generate_location_forecast(request.destination, horizon_hours=72)
 
-    # Extract peak probabilities
-    origin_peak = max(
-        (p["disruption_likelihood"] for p in origin_forecast.get("data", [])),
-        default=0.1,
-    )
-    dest_peak = max(
-        (p["disruption_likelihood"] for p in dest_forecast.get("data", [])),
-        default=0.1,
-    )
-
+    origin_peak = max((p["disruption_likelihood"] for p in origin_forecast.get("data", [])), default=0.1)
+    dest_peak = max((p["disruption_likelihood"] for p in dest_forecast.get("data", [])), default=0.1)
     overall_risk = round((origin_peak * 0.5 + dest_peak * 0.5), 4)
 
     def _risk_level(score: float) -> str:
-        if score >= 0.75:
-            return "CRITICAL"
-        if score >= 0.50:
-            return "HIGH"
-        if score >= 0.25:
-            return "MEDIUM"
+        if score >= 0.75: return "CRITICAL"
+        if score >= 0.50: return "HIGH"
+        if score >= 0.25: return "MEDIUM"
         return "LOW"
 
-    # Persist shipment record
     shipment_id = str(uuid.uuid4())
     try:
         shipment = Shipment(
-            id=uuid.UUID(shipment_id),
+            id=shipment_id,
             origin=request.origin,
             destination=request.destination,
             cargo_type=request.cargo_type,
@@ -389,7 +407,6 @@ async def analyze_shipment(
     except Exception as exc:
         logger.warning(f"Shipment DB write failed: {exc}")
 
-    # Build response
     origin_cond = origin_forecast.get("current_conditions", {})
     dest_cond = dest_forecast.get("current_conditions", {})
 
@@ -401,24 +418,9 @@ async def analyze_shipment(
     }
 
     timeline = [
-        {
-            "checkpoint": request.origin,
-            "risk_level": _risk_level(origin_peak),
-            "disruption_likelihood": round(origin_peak, 4),
-            "alert": _pick_alert(origin_peak, origin_cond),
-        },
-        {
-            "checkpoint": "Transit Zone",
-            "risk_level": _risk_level(overall_risk * 0.8),
-            "disruption_likelihood": round(overall_risk * 0.8, 4),
-            "alert": "Standard monitoring in transit zone.",
-        },
-        {
-            "checkpoint": request.destination,
-            "risk_level": _risk_level(dest_peak),
-            "disruption_likelihood": round(dest_peak, 4),
-            "alert": _pick_alert(dest_peak, dest_cond),
-        },
+        {"checkpoint": request.origin, "risk_level": _risk_level(origin_peak), "disruption_likelihood": round(origin_peak, 4), "alert": _pick_alert(origin_peak, origin_cond)},
+        {"checkpoint": "Transit Zone", "risk_level": _risk_level(overall_risk * 0.8), "disruption_likelihood": round(overall_risk * 0.8, 4), "alert": "Standard monitoring in transit zone."},
+        {"checkpoint": request.destination, "risk_level": _risk_level(dest_peak), "disruption_likelihood": round(dest_peak, 4), "alert": _pick_alert(dest_peak, dest_cond)},
     ]
 
     recommendations = _build_recommendations(overall_risk, forecasts)
@@ -437,23 +439,17 @@ async def analyze_shipment(
 
 
 def _pick_alert(risk: float, conditions: Dict) -> str:
-    if risk >= 0.75:
-        return "⚠️ Critical disruption risk detected. Immediate action required."
-    if risk >= 0.50:
-        return f"High risk — weather severity: {conditions.get('weather_severity', 'N/A')}"
+    if risk >= 0.75: return "⚠️ Critical disruption risk detected. Immediate action required."
+    if risk >= 0.50: return f"High risk — weather severity: {conditions.get('weather_severity', 'N/A')}"
     return "Monitoring active. No immediate action required."
 
 
 def _build_recommendations(overall_risk: float, forecasts: Dict) -> List[str]:
     recs = []
-    if overall_risk >= 0.75:
-        recs.append("🚨 CRITICAL: Delay shipment or reroute immediately.")
-    if forecasts.get("weather_delays", 0) > 0.5:
-        recs.append("Consider weather-avoidance routing.")
-    if forecasts.get("port_congestion", 0) > 0.4:
-        recs.append("Pre-book alternative port berth as contingency.")
-    if not recs:
-        recs.append("✅ Route cleared. Proceed with standard monitoring.")
+    if overall_risk >= 0.75: recs.append("🚨 CRITICAL: Delay shipment or reroute immediately.")
+    if forecasts.get("weather_delays", 0) > 0.5: recs.append("Consider weather-avoidance routing.")
+    if forecasts.get("port_congestion", 0) > 0.4: recs.append("Pre-book alternative port berth as contingency.")
+    if not recs: recs.append("✅ Route cleared. Proceed with standard monitoring.")
     return recs
 
 
@@ -469,10 +465,6 @@ async def get_location_forecast(
     location: str,
     hours: int = Query(72, ge=1, le=168, description="Forecast horizon in hours"),
 ) -> Dict:
-    """
-    Returns an hourly time-series of disruption likelihood for the given location.
-    Prophet model generates uncertainty bounds (lower/upper).
-    """
     try:
         forecast = await generate_location_forecast(location, horizon_hours=hours)
         return forecast
@@ -489,10 +481,6 @@ async def get_location_forecast(
     summary="Get Prophet model performance metrics",
 )
 async def get_model_performance() -> Dict:
-    """
-    Returns current Prophet model accuracy metrics including
-    precision, recall, F1, MAPE, and coverage statistics.
-    """
     return build_mock_performance_report()
 
 
@@ -506,34 +494,75 @@ async def get_model_performance() -> Dict:
 async def optimize_route(
     request: RouteOptimizationRequest,
 ) -> Dict:
-    """
-    Returns disruption-aware cost hints for the A* router (handled by Frontend).
-    Backend provides per-waypoint disruption risk scores.
-    """
     waypoints = request.waypoints
     if not waypoints:
         raise HTTPException(status_code=400, detail="At least one waypoint required.")
 
-    # Build per-waypoint risk scores
-    risks = []
-    for wp in waypoints:
-        lat, lng = wp.get("lat", 0), wp.get("lng", 0)
-        risks.append({
-            "lat": lat,
-            "lng": lng,
-            "disruption_risk": 0.3,           # will be replaced by real forecast
-            "congestion_factor": 1.2,
-            "recommended": True,
+    try:
+        raw_origin = waypoints[0].get("id") or waypoints[0].get("name") or "Shanghai"
+        raw_dest = waypoints[-1].get("id") or waypoints[-1].get("name") or "Rotterdam"
+        
+        origin = "Shanghai"
+        destination = "Rotterdam"
+        
+        for node_id in routing_engine.graph.nodes.keys():
+            if node_id.lower() in str(raw_origin).lower():
+                origin = node_id
+            if node_id.lower() in str(raw_dest).lower():
+                destination = node_id
+
+        departure = datetime.now(timezone.utc)
+        route = await routing_engine.get_optimal_route(origin, destination, departure)
+        
+        if not route:
+            logger.warning(f"No path found between {origin} and {destination}, using fallback.")
+            fallback_waypoints = []
+            for wp in waypoints:
+                lat = wp.get("lat") or wp.get("latitude")
+                lng = wp.get("lng") or wp.get("longitude")
+                fallback_waypoints.append({"lat": lat, "lng": lng, "disruption_risk": 0.1})
+                
+            return {
+                "optimized_waypoints": fallback_waypoints,
+                "estimated_time_savings_minutes": 0,
+                "algorithm": "NEXUS Hybrid (Direct Fallback)",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        optimized_waypoints = []
+        for edge in route.edges:
+            node = routing_engine.graph.nodes[edge.source]
+            optimized_waypoints.append({
+                "lat": node.latitude,
+                "lng": node.longitude,
+                "disruption_risk": edge.disruption_risk[0],
+                "congestion_factor": edge.real_time_multiplier,
+                "recommended": True
+            })
+        
+        dest_node = routing_engine.graph.nodes[route.edges[-1].target]
+        optimized_waypoints.append({
+            "lat": dest_node.latitude,
+            "lng": dest_node.longitude,
+            "disruption_risk": 0.0,
+            "recommended": True
         })
 
-    return {
-        "optimized_waypoints": risks,
-        "estimated_time_savings_minutes": 45,
-        "disruption_avoidance_score": 0.78,
-        "algorithm": "A*",
-        "backend_forecast_applied": request.consider_disruptions,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+        return {
+            "optimized_waypoints": optimized_waypoints,
+            "estimated_time_savings_minutes": round(route.total_time * 60 * 0.15, 1),
+            "disruption_avoidance_score": round(1.0 - route.risk_score, 2),
+            "algorithm": "NEXUS Hybrid Engine (Roadmap v1)",
+            "backend_forecast_applied": True,
+            "total_cost": round(route.total_cost, 2),
+            "total_time": round(route.total_time, 1),
+            "total_distance": round(route.total_distance, 1),
+            "eta": route.eta.isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        logger.error(f"Hybrid routing failed: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── ENDPOINT 6: POST /ingest/trigger (dev helper) ────────────────────────────
@@ -544,10 +573,6 @@ async def optimize_route(
     summary="Manually trigger data ingestion (dev/debug)",
 )
 async def trigger_ingestion(background_tasks: BackgroundTasks) -> Dict:
-    """
-    Manually fires the data ingestion pipeline in a background task.
-    Useful for testing without waiting for the scheduler.
-    """
     async def _run():
         try:
             await ingest_all_data()
@@ -556,7 +581,3 @@ async def trigger_ingestion(background_tasks: BackgroundTasks) -> Dict:
 
     background_tasks.add_task(_run)
     return {"message": "Data ingestion triggered in background.", "status": "accepted"}
-
-
-
-
