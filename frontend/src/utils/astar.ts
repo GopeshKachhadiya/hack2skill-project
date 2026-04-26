@@ -1,22 +1,20 @@
 /**
  * A* Pathfinding Algorithm Implementation
- * Enhanced with K-Shortest Paths and Sea-Route focus.
+ * Developer 2: Frontend & Route Optimization Engineer
+ *
+ * Finds the optimal route between two nodes in a shipping graph,
+ * considering distance, time, disruption risk, and user preferences.
  */
 
-import type { Node, Edge, Route, RouteConstraints } from '../types';
+import type { Coordinate, Node, Edge, Route, RouteConstraints } from '../types';
 import { haversineDistance, nodeToCoord } from './geo';
 import { DEFAULT_ROUTE_WEIGHTS } from './constants';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Data Structures
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface AStarNode {
   id: string;
-  gScore: number; // cost from start
-  fScore: number; // gScore + heuristic
+  gScore: number;
+  fScore: number;
   parent: AStarNode | null;
-  edgeToParent?: Edge; // Track which edge was used
 }
 
 class MinHeap {
@@ -24,7 +22,7 @@ class MinHeap {
 
   push(node: AStarNode): void {
     this.heap.push(node);
-    this._bubbleUp(this.heap.length - 1);
+    this.bubbleUp(this.heap.length - 1);
   }
 
   pop(): AStarNode | undefined {
@@ -33,7 +31,7 @@ class MinHeap {
     const last = this.heap.pop()!;
     if (this.heap.length > 0) {
       this.heap[0] = last;
-      this._sinkDown(0);
+      this.sinkDown(0);
     }
     return top;
   }
@@ -42,33 +40,29 @@ class MinHeap {
     return this.heap.length === 0;
   }
 
-  private _bubbleUp(idx: number): void {
-    while (idx > 0) {
-      const parent = Math.floor((idx - 1) / 2);
-      if (this.heap[parent].fScore <= this.heap[idx].fScore) break;
-      [this.heap[parent], this.heap[idx]] = [this.heap[idx], this.heap[parent]];
-      idx = parent;
+  private bubbleUp(index: number): void {
+    while (index > 0) {
+      const parentIndex = Math.floor((index - 1) / 2);
+      if (this.heap[parentIndex].fScore <= this.heap[index].fScore) break;
+      [this.heap[parentIndex], this.heap[index]] = [this.heap[index], this.heap[parentIndex]];
+      index = parentIndex;
     }
   }
 
-  private _sinkDown(idx: number): void {
-    const n = this.heap.length;
+  private sinkDown(index: number): void {
+    const size = this.heap.length;
     while (true) {
-      let smallest = idx;
-      const left = 2 * idx + 1;
-      const right = 2 * idx + 2;
-      if (left < n && this.heap[left].fScore < this.heap[smallest].fScore) smallest = left;
-      if (right < n && this.heap[right].fScore < this.heap[smallest].fScore) smallest = right;
-      if (smallest === idx) break;
-      [this.heap[smallest], this.heap[idx]] = [this.heap[idx], this.heap[smallest]];
-      idx = smallest;
+      let smallest = index;
+      const left = index * 2 + 1;
+      const right = index * 2 + 2;
+      if (left < size && this.heap[left].fScore < this.heap[smallest].fScore) smallest = left;
+      if (right < size && this.heap[right].fScore < this.heap[smallest].fScore) smallest = right;
+      if (smallest === index) break;
+      [this.heap[smallest], this.heap[index]] = [this.heap[index], this.heap[smallest]];
+      index = smallest;
     }
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Graph Class
-// ─────────────────────────────────────────────────────────────────────────────
 
 export class Graph {
   private nodes: Map<string, Node> = new Map();
@@ -82,39 +76,54 @@ export class Graph {
   }
 
   addEdge(edge: Edge): void {
-    const fwdEdges = this.adjacency.get(edge.from) ?? [];
-    fwdEdges.push(edge);
-    this.adjacency.set(edge.from, fwdEdges);
+    const forwardEdges = this.adjacency.get(edge.from) ?? [];
+    forwardEdges.push(edge);
+    this.adjacency.set(edge.from, forwardEdges);
 
-    const reverseEdge: Edge = { ...edge, from: edge.to, to: edge.from };
-    const bwdEdges = this.adjacency.get(edge.to) ?? [];
-    bwdEdges.push(reverseEdge);
-    this.adjacency.set(edge.to, bwdEdges);
+    const reverseEdge: Edge = {
+      ...edge,
+      from: edge.to,
+      to: edge.from,
+      path: edge.path ? [...edge.path].reverse() : undefined,
+    };
+    const backwardEdges = this.adjacency.get(edge.to) ?? [];
+    backwardEdges.push(reverseEdge);
+    this.adjacency.set(edge.to, backwardEdges);
   }
 
   getNode(id: string): Node | undefined {
     return this.nodes.get(id);
   }
 
-  getNeighbors(id: string, blockedEdges: Set<string> = new Set()): { node: Node; edge: Edge }[] {
+  getEdge(fromId: string, toId: string): Edge | undefined {
+    return (this.adjacency.get(fromId) ?? []).find((edge) => edge.to === toId);
+  }
+
+  getNeighbors(id: string): { node: Node; edge: Edge }[] {
     const edges = this.adjacency.get(id) ?? [];
     return edges
-      .filter((e) => !blockedEdges.has(`${e.from}-${e.to}`))
-      .map((e) => {
-        const node = this.nodes.get(e.to);
-        return node ? { node, edge: e } : null;
+      .map((edge) => {
+        const node = this.nodes.get(edge.to);
+        return node ? { node, edge } : null;
       })
       .filter(Boolean) as { node: Node; edge: Edge }[];
   }
 
-  getAllNodes(): Node[] {
-    return Array.from(this.nodes.values());
+  hasPath(fromId: string, toId: string): boolean {
+    const visited = new Set<string>();
+    const queue = [fromId];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current === toId) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      this.getNeighbors(current).forEach(({ node }) => queue.push(node.id));
+    }
+
+    return false;
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cost Function
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface CostWeights {
   distance: number;
@@ -127,34 +136,26 @@ export function calculateEdgeCost(
   edge: Edge,
   weights: CostWeights = DEFAULT_ROUTE_WEIGHTS
 ): number {
-  const AVG_SPEED = 35; 
-  const distanceCost = (edge.distance / AVG_SPEED) * weights.distance;
+  const averageSpeed = 35;
+  const distanceCost = (edge.distance / averageSpeed) * weights.distance;
   const delayCost = edge.currentDelay * weights.delay;
   const disruptionCost = edge.disruptionRisk * 100 * weights.disruption;
-  
-  // Penalize non-sea routes heavily if we want sea routes only
-  // (In our graph, all edges should be sea routes, but we can add a check)
-  const modePenalty = edge.type === 'land' ? 1000 : 0; 
-  
-  return distanceCost + delayCost + disruptionCost + modePenalty;
+  return distanceCost + delayCost + disruptionCost;
 }
 
 function heuristic(node: Node, goal: Node): number {
-  const dist = haversineDistance(nodeToCoord(node), nodeToCoord(goal));
-  return dist / 35; 
+  return haversineDistance(nodeToCoord(node), nodeToCoord(goal)) / 35;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// A* Core Algorithm
-// ─────────────────────────────────────────────────────────────────────────────
 
 function reconstructPath(endNode: AStarNode): string[] {
   const path: string[] = [];
   let current: AStarNode | null = endNode;
+
   while (current) {
     path.unshift(current.id);
     current = current.parent;
   }
+
   return path;
 }
 
@@ -162,18 +163,15 @@ export function aStar(
   startId: string,
   goalId: string,
   graph: Graph,
-  weights: CostWeights = DEFAULT_ROUTE_WEIGHTS,
-  blockedEdges: Set<string> = new Set()
+  weights: CostWeights = DEFAULT_ROUTE_WEIGHTS
 ): string[] | null {
+  const startNode = graph.getNode(startId);
   const goalNode = graph.getNode(goalId);
-  if (!goalNode) return null;
+  if (!startNode || !goalNode) return null;
 
   const openHeap = new MinHeap();
-  const nodeMap = new Map<string, AStarNode>();
   const closedSet = new Set<string>();
-
-  const startNode = graph.getNode(startId);
-  if (!startNode) return null;
+  const bestSeen = new Map<string, AStarNode>();
 
   const start: AStarNode = {
     id: startId,
@@ -181,35 +179,38 @@ export function aStar(
     fScore: heuristic(startNode, goalNode),
     parent: null,
   };
+
   openHeap.push(start);
-  nodeMap.set(startId, start);
+  bestSeen.set(startId, start);
 
   let iterations = 0;
-  const MAX_ITER = 10000;
+  const maxIterations = 10000;
 
-  while (!openHeap.isEmpty() && iterations++ < MAX_ITER) {
+  while (!openHeap.isEmpty() && iterations++ < maxIterations) {
     const current = openHeap.pop()!;
-    if (current.id === goalId) return reconstructPath(current);
+    if (closedSet.has(current.id)) continue;
+
+    if (current.id === goalId) {
+      return reconstructPath(current);
+    }
 
     closedSet.add(current.id);
-    const neighbors = graph.getNeighbors(current.id, blockedEdges);
 
-    for (const { node: neighborNode, edge } of neighbors) {
+    for (const { node: neighborNode, edge } of graph.getNeighbors(current.id)) {
       if (closedSet.has(neighborNode.id)) continue;
 
-      const tentativeG = current.gScore + calculateEdgeCost(edge, weights);
-      const existing = nodeMap.get(neighborNode.id);
+      const tentativeGScore = current.gScore + calculateEdgeCost(edge, weights);
+      const existing = bestSeen.get(neighborNode.id);
 
-      if (!existing || tentativeG < existing.gScore) {
-        const newNode: AStarNode = {
+      if (!existing || tentativeGScore < existing.gScore) {
+        const nextNode: AStarNode = {
           id: neighborNode.id,
-          gScore: tentativeG,
-          fScore: tentativeG + heuristic(neighborNode, goalNode),
+          gScore: tentativeGScore,
+          fScore: tentativeGScore + heuristic(neighborNode, goalNode),
           parent: current,
-          edgeToParent: edge,
         };
-        nodeMap.set(neighborNode.id, newNode);
-        openHeap.push(newNode);
+        bestSeen.set(neighborNode.id, nextNode);
+        openHeap.push(nextNode);
       }
     }
   }
@@ -217,117 +218,102 @@ export function aStar(
   return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// K-Shortest Paths (Yen's Algorithm Lite)
-// ─────────────────────────────────────────────────────────────────────────────
+export function getRouteCoordinates(graph: Graph, nodeIds: string[]): Coordinate[] {
+  const coordinates: Coordinate[] = [];
 
-export function kShortestPaths(
-  startId: string,
-  goalId: string,
-  graph: Graph,
-  k: number = 3,
-  weights: CostWeights = DEFAULT_ROUTE_WEIGHTS
-): string[][] {
-  const paths: string[][] = [];
-  const firstPath = aStar(startId, goalId, graph, weights);
-  if (!firstPath) return [];
+  for (let index = 0; index < nodeIds.length - 1; index += 1) {
+    const fromId = nodeIds[index];
+    const toId = nodeIds[index + 1];
+    const edge = graph.getEdge(fromId, toId);
 
-  paths.push(firstPath);
-  const blockedEdges = new Set<string>();
-
-  for (let i = 1; i < k; i++) {
-    const lastPath = paths[i - 1];
-    if (!lastPath || lastPath.length < 2) break;
-
-    // Block one edge from the previous path to force an alternative
-    // We pick the edge with the lowest risk or highest cost to diversify
-    const edgeToBlockIdx = Math.floor(Math.random() * (lastPath.length - 1));
-    const u = lastPath[edgeToBlockIdx];
-    const v = lastPath[edgeToBlockIdx + 1];
-    blockedEdges.add(`${u}-${v}`);
-    blockedEdges.add(`${v}-${u}`);
-
-    const nextPath = aStar(startId, goalId, graph, weights, blockedEdges);
-    if (nextPath && !paths.some(p => JSON.stringify(p) === JSON.stringify(nextPath))) {
-      paths.push(nextPath);
+    let segment: Coordinate[] = [];
+    if (edge?.path && edge.path.length > 1) {
+      segment = edge.path;
     } else {
-      // If no new path found, stop
-      break;
+      const fromNode = graph.getNode(fromId);
+      const toNode = graph.getNode(toId);
+      if (fromNode && toNode) {
+        segment = [nodeToCoord(fromNode), nodeToCoord(toNode)];
+      }
     }
+
+    if (segment.length === 0) continue;
+    coordinates.push(...(coordinates.length === 0 ? segment : segment.slice(1)));
   }
 
-  return paths;
+  return coordinates;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Route Optimization Service
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function optimizeRoute(
   originId: string,
   destinationId: string,
   graph: Graph,
   constraints?: RouteConstraints
-): { routes: Route[]; original: Route } | null {
+): { optimized: Route; original: Route } | null {
   const weights: CostWeights = { ...DEFAULT_ROUTE_WEIGHTS };
+
   if (constraints?.priority === 'fastest') {
     weights.distance = 2.0;
-    weights.delay = 5.0;
+    weights.delay = 4.0;
+    weights.disruption = 1.0;
+  } else if (constraints?.priority === 'cheapest') {
+    weights.distance = 3.0;
+    weights.delay = 1.0;
+    weights.disruption = 0.5;
   } else if (constraints?.priority === 'safest') {
-    weights.disruption = 8.0;
+    weights.distance = 0.5;
+    weights.delay = 1.0;
+    weights.disruption = 6.0;
   }
 
-  const k = constraints?.alternatives ?? 3;
-  const paths = kShortestPaths(originId, destinationId, graph, k, weights);
-  if (paths.length === 0) return null;
+  const path = aStar(originId, destinationId, graph, weights);
+  if (!path) return null;
 
-  const routes = paths.map((path) => {
-    const nodes = path.map((id) => graph.getNode(id)!).filter(Boolean);
-    let totalDistance = 0;
-    let totalTime = 0;
-    let totalCost = 0;
-    let maxRisk = 0;
+  const waypoints = path
+    .map((nodeId) => graph.getNode(nodeId))
+    .filter(Boolean) as Node[];
 
-    for (let i = 0; i < nodes.length - 1; i++) {
-      const neighbors = graph.getNeighbors(nodes[i].id);
-      const edgeData = neighbors.find((n) => n.node.id === nodes[i + 1].id);
-      if (edgeData) {
-        const { edge } = edgeData;
-        totalDistance += edge.distance;
-        totalTime += edge.baseTime + edge.currentDelay;
-        totalCost += edge.cost;
-        maxRisk = Math.max(maxRisk, edge.disruptionRisk);
-      }
-    }
+  let totalDistance = 0;
+  let totalTime = 0;
+  let totalCost = 0;
+  let maxRisk = 0;
 
-    return {
-      nodeIds: path,
-      waypoints: nodes,
-      totalDistance,
-      totalTime,
-      totalCost,
-      riskScore: maxRisk * 100,
-      stops: path.length,
-    } as Route;
-  });
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const edge = graph.getEdge(path[index], path[index + 1]);
+    if (!edge) continue;
 
-  // Original naive route
+    totalDistance += edge.distance;
+    totalTime += edge.baseTime + edge.currentDelay;
+    totalCost += edge.cost;
+    maxRisk = Math.max(maxRisk, edge.disruptionRisk);
+  }
+
+  const optimized: Route = {
+    nodeIds: path,
+    waypoints,
+    totalDistance,
+    totalTime,
+    totalCost,
+    riskScore: maxRisk * 100,
+    stops: path.length,
+  };
+
   const originNode = graph.getNode(originId);
-  const destNode = graph.getNode(destinationId);
-  const directDist = originNode && destNode
-    ? haversineDistance(nodeToCoord(originNode), nodeToCoord(destNode))
-    : routes[0].totalDistance;
+  const destinationNode = graph.getNode(destinationId);
+  const directDistance =
+    originNode && destinationNode
+      ? haversineDistance(nodeToCoord(originNode), nodeToCoord(destinationNode))
+      : totalDistance;
 
   const original: Route = {
     nodeIds: [originId, destinationId],
-    waypoints: [originNode!, destNode!].filter(Boolean),
-    totalDistance: directDist,
-    totalTime: directDist / 35 + 48,
-    totalCost: routes[0].totalCost * 1.2,
+    waypoints: [originNode, destinationNode].filter(Boolean) as Node[],
+    totalDistance: directDistance,
+    totalTime: directDistance / 35 + 48,
+    totalCost: totalCost * 1.3,
     riskScore: 85,
     stops: 2,
   };
 
-  return { routes, original };
+  return { optimized, original };
 }
-

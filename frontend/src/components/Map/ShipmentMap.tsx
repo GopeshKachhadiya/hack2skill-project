@@ -22,6 +22,28 @@ function FlyToShipment({ shipment }: { shipment: Shipment | null }) {
   return null;
 }
 
+type MapPoint = [number, number];
+
+function unwrapPolyline(points: MapPoint[]): MapPoint[] {
+  if (points.length <= 1) return points;
+
+  const normalized: MapPoint[] = [[points[0][0], points[0][1]]];
+  let previousLng = points[0][1];
+
+  for (let index = 1; index < points.length; index += 1) {
+    const [lat, lng] = points[index];
+    let adjustedLng = lng;
+
+    while (adjustedLng - previousLng > 180) adjustedLng -= 360;
+    while (adjustedLng - previousLng < -180) adjustedLng += 360;
+
+    normalized.push([lat, adjustedLng]);
+    previousLng = adjustedLng;
+  }
+
+  return normalized;
+}
+
 interface ShipmentMapProps {
   shipments: Shipment[];
   disruptions: Disruption[];
@@ -33,6 +55,11 @@ interface ShipmentMapProps {
 }
 
 export default function ShipmentMap({ shipments, disruptions, selectedShipment, onSelectShipment, showDisruptions = true, showRoutes = false, optimizedPath }: ShipmentMapProps) {
+  const selectedShipmentPath = selectedShipment?.route
+    ? unwrapPolyline(selectedShipment.route.map((c) => [c.lat, c.lng] as MapPoint))
+    : null;
+  const optimizedPolyline = optimizedPath ? unwrapPolyline(optimizedPath) : null;
+
   return (
     <div className="map-container" style={{ height: '100%', minHeight: 480 }}>
       <MapContainer center={[25, 20]} zoom={3} style={{ width: '100%', height: '100%' }} minZoom={2} maxZoom={16} scrollWheelZoom>
@@ -48,8 +75,12 @@ export default function ShipmentMap({ shipments, disruptions, selectedShipment, 
             <Popup><div style={{ minWidth: 220 }}><div style={{ fontWeight: 700, marginBottom: 6 }}>Package {s.id}</div><div><b>Route:</b> {s.origin}{" -> "}{s.destination}</div><div><b>Status:</b> <span style={{ color: STATUS_COLORS[s.currentStatus] }}>{s.currentStatus.replace('_', ' ')}</span></div><div><b>Cargo:</b> {s.cargoType}</div><div><b>Priority:</b> {s.priority}</div><div><b>Delay:</b> {s.delay > 0 ? `${s.delay.toFixed(1)}h` : 'On time'}</div><div style={{ marginTop: 6 }}><b>Risk:</b> <span style={{ color: riskColor(s.riskScore) }}>{riskLabel(s.riskScore)}</span></div><div style={{ marginTop: 6, fontSize: '0.78rem', color: '#94a3b8' }}>ETA: {formatDate(s.expectedArrival)}</div></div></Popup>
           </Circle>
         ))}
-        {showRoutes && selectedShipment?.route && <Polyline positions={selectedShipment.route.map((c) => [c.lat, c.lng])} pathOptions={{ color: '#3b82f6', weight: 2, dashArray: '8 4', opacity: 0.7 }} />}
-        {optimizedPath && optimizedPath.length > 1 && <Polyline positions={optimizedPath} pathOptions={{ color: '#10b981', weight: 3, opacity: 0.9 }} />}
+        {showRoutes && selectedShipmentPath && selectedShipmentPath.length > 1 && (
+          <Polyline positions={selectedShipmentPath} pathOptions={{ color: '#3b82f6', weight: 2, dashArray: '8 4', opacity: 0.7 }} />
+        )}
+        {optimizedPolyline && optimizedPolyline.length > 1 && (
+          <Polyline positions={optimizedPolyline} pathOptions={{ color: '#10b981', weight: 3, opacity: 0.9 }} />
+        )}
       </MapContainer>
     </div>
   );

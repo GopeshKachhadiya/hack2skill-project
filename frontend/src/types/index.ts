@@ -8,6 +8,8 @@ export interface Coordinate {
   lng: number;
 }
 
+export type RouteMode = 'multimodal' | 'sea';
+
 export interface Node {
   id: string;
   name: string;
@@ -30,7 +32,8 @@ export interface Edge {
   currentDelay: number; // hours
   disruptionRisk: number; // 0-1
   cost: number; // $/ton
-  type?: 'sea' | 'land';
+  mode?: 'sea' | 'land';
+  path?: Coordinate[];
 }
 
 export type ShipmentStatus =
@@ -94,8 +97,7 @@ export interface RouteConstraints {
   maxCost?: number;
   cargoType?: string;
   riskTolerance?: number; // 0-100
-  priority?: 'fastest' | 'cheapest' | 'safest';
-  alternatives?: number;
+  priority?: 'balanced' | 'fastest' | 'cheapest' | 'safest';
 }
 
 export interface Route {
@@ -111,7 +113,6 @@ export interface Route {
 export interface RouteOptimizationResult {
   originalRoute: Route;
   optimizedRoute: Route;
-  alternatives?: Route[];
   timeSaved: number; // hours
   costSaved: number; // $
   riskReduction: number; // 0-100
@@ -200,4 +201,3 @@ export interface UserPreferences {
   };
   mapStyle: 'street' | 'satellite' | 'terrain';
 }
-

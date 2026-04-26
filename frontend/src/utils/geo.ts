@@ -63,3 +63,54 @@ export function getBoundingBox(coords: Coordinate[]): {
 export function nodeToCoord(node: Node): Coordinate {
   return { lat: node.latitude, lng: node.longitude };
 }
+
+/**
+ * Generate a curved path (Bezier curve) between a sequence of points
+ */
+export function generateCurvedPath(points: [number, number][], curveFactor = 0.2): [number, number][] {
+  if (points.length < 2) return points;
+
+  const result: [number, number][] = [];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i];
+    const end = points[i + 1];
+
+    if (i === 0) result.push(start);
+
+    const [lat1, lng1] = start;
+    const [lat2, endLng] = end;
+    let lng2 = endLng;
+
+    const lngDiff = lng2 - lng1;
+    if (lngDiff > 180) {
+      lng2 -= 360;
+    } else if (lngDiff < -180) {
+      lng2 += 360;
+    }
+
+    const midLat = (lat1 + lat2) / 2;
+    const midLng = (lng1 + lng2) / 2;
+    const dLat = lat2 - lat1;
+    const dLng = lng2 - lng1;
+    const perpLat = -dLng;
+    const perpLng = dLat;
+    const ctrlLat = midLat + perpLat * curveFactor;
+    const ctrlLng = midLng + perpLng * curveFactor;
+
+    const numPoints = 20;
+    for (let j = 1; j <= numPoints; j++) {
+      const t = j / numPoints;
+      const t1 = 1 - t;
+      const bLat = t1 * t1 * lat1 + 2 * t1 * t * ctrlLat + t * t * lat2;
+      let bLng = t1 * t1 * lng1 + 2 * t1 * t * ctrlLng + t * t * lng2;
+
+      while (bLng > 180) bLng -= 360;
+      while (bLng < -180) bLng += 360;
+
+      result.push([bLat, bLng]);
+    }
+  }
+
+  return result;
+}
