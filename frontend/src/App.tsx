@@ -12,7 +12,9 @@ import RouteOptimizationPage from './pages/RouteOptimization';
 import ShipmentsPage from './pages/Shipments';
 import AnalyticsPage from './pages/Analytics';
 import AlertsPage from './pages/Alerts';
-import SystemHealthPage from './pages/SystemHealth';
+
+
+import ChatbotWidget from './components/ChatbotWidget';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,10 +39,12 @@ function AppContent() {
             <Route path="/shipments" element={<ShipmentsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
-            <Route path="/health" element={<SystemHealthPage />} />
+
           </Routes>
         </div>
       </div>
+
+      <ChatbotWidget />
 
       <ToastContainer
         position="top-right"

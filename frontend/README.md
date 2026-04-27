@@ -1,4 +1,4 @@
-# NEXUS — Smart Supply Chain Resilience Platform
+# Anvayaa — Smart Supply Chain Resilience Platform
 ### Developer 2: Frontend & Route Optimization Engineer
 
 > **AntiGravity Innovation**: Lift problems before they sink operations.
@@ -72,7 +72,7 @@ frontend/
 | Prophet forecast charts (Recharts) | ✅ |
 | Model performance analytics | ✅ |
 | Disruption alert feed | ✅ |
-| System health monitoring | ✅ |
+
 | Shipments table with sort/filter | ✅ |
 | Responsive design | ✅ |
 | TypeScript strict mode | ✅ |
@@ -167,7 +167,7 @@ All APIs have **automatic mock data fallback** for offline development.
 - Detailed cards: type, location, probability, confidence, time window
 - AI recommendations for each disruption
 
-### System Health
+
 - Backend API / Database / WebSocket status
 - Data source freshness (Weather, Traffic, Port)
 - Overall health gauge

@@ -13,12 +13,15 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 import random
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -35,6 +38,58 @@ from app.routing.constants import PORT_COORDS, SHIPMENT_STATUSES, SHIPMENT_CARGO
 settings = get_settings()
 router = APIRouter()
 routing_engine = RoutingEngine()
+_sample_shipments_cache: list[Dict[str, Any]] | None = None
+PROJECT_SCOPE_HINTS = {
+    "shipment",
+    "shipments",
+    "ship",
+    "shp-",
+    "route",
+    "routes",
+    "sea",
+    "maritime",
+    "port",
+    "ports",
+    "cargo",
+    "delay",
+    "disruption",
+    "disruptions",
+    "forecast",
+    "forecasts",
+    "alert",
+    "alerts",
+    "tracking",
+    "analytics",
+    "dashboard",
+    "anvayaa",
+    "platform",
+    "backend",
+    "frontend",
+    "api",
+    "logistics",
+    "risk",
+    "critical",
+    "delayed",
+    "status",
+}
+OFF_TOPIC_HINTS = {
+    "football",
+    "cricket",
+    "match",
+    "movie",
+    "movies",
+    "actor",
+    "actress",
+    "celebrity",
+    "politics",
+    "election",
+    "recipe",
+    "song",
+    "music",
+    "exam",
+    "school",
+    "college",
+}
 
 
 # ── Pydantic Schemas ──────────────────────────────────────────────────────────
@@ -117,6 +172,22 @@ class ShipmentResponse(BaseModel):
     route: List[ShipmentPoint]
 
 
+class AssistantMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
+class AssistantChatRequest(BaseModel):
+    messages: List[AssistantMessage] = Field(..., min_length=1, max_length=24)
+    context: Optional[Dict[str, List[Dict[str, Any]]]] = None
+
+
+class AssistantChatResponse(BaseModel):
+    reply: str
+    scoped: bool = True
+    retryAfterSeconds: Optional[int] = None
+
+
 # ── Health Check ──────────────────────────────────────────────────────────────
 
 @router.get("/health", tags=["System"])
@@ -149,10 +220,7 @@ async def get_shipments(
     limit: int = Query(75, ge=1, le=500),
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Return shipment data in the shape used by the frontend."""
-    records = await Shipment.find_all().sort("-created_at").limit(limit).to_list()
-    shipments = [_serialize_shipment_record(record) for record in records]
-    if not shipments:
-        shipments = _generate_sample_shipments(limit)
+    shipments = await _get_shipments_snapshot(limit)
     return {"shipments": shipments}
 
 
@@ -229,16 +297,17 @@ def _get_maritime_route_points(origin: str, destination: str, o_coords: Dict, d_
     }]
 
 
-def _generate_sample_shipments(count: int = 75) -> List[Dict[str, Any]]:
+def _generate_sample_shipments(count: int = 75, seed: int = 20260426) -> List[Dict[str, Any]]:
+    rng = random.Random(seed)
     ports = list(PORT_COORDS.keys())
     shipments: List[Dict[str, Any]] = []
     for idx in range(count):
-        origin = random.choice(ports)
-        destination = random.choice([p for p in ports if p != origin])
-        status = random.choices(SHIPMENT_STATUSES, weights=[0.42, 0.24, 0.12, 0.11, 0.11], k=1)[0]
+        origin = rng.choice(ports)
+        destination = rng.choice([p for p in ports if p != origin])
+        status = rng.choices(SHIPMENT_STATUSES, weights=[0.42, 0.24, 0.12, 0.11, 0.11], k=1)[0]
         risk_score, delay = _status_summary(status)
-        departure = datetime.now(timezone.utc) - timedelta(hours=random.randint(12, 240))
-        expected_arrival = departure + timedelta(hours=random.randint(24, 500))
+        departure = datetime.now(timezone.utc) - timedelta(hours=rng.randint(12, 240))
+        expected_arrival = departure + timedelta(hours=rng.randint(24, 500))
         origin_coords = PORT_COORDS[origin]
         destination_coords = PORT_COORDS[destination]
         waypoints = _get_maritime_route_points(origin, destination, origin_coords, destination_coords)
@@ -253,14 +322,505 @@ def _generate_sample_shipments(count: int = 75) -> List[Dict[str, Any]]:
             "departureTime": departure.isoformat(),
             "expectedArrival": expected_arrival.isoformat(),
             "currentStatus": status,
-            "cargoType": random.choice(SHIPMENT_CARGO),
-            "cargoValue": float(random.randint(50000, 5000000)),
-            "priority": random.choice(["normal", "urgent", "time-sensitive"]),
+            "cargoType": rng.choice(SHIPMENT_CARGO),
+            "cargoValue": float(rng.randint(50000, 5000000)),
+            "priority": rng.choice(["normal", "urgent", "time-sensitive"]),
             "riskScore": round(risk_score, 4),
             "delay": round(delay, 1),
             "route": [origin_coords] + waypoints + [destination_coords],
         })
     return shipments
+
+
+async def _get_shipments_snapshot(limit: int = 75) -> List[Dict[str, Any]]:
+    global _sample_shipments_cache
+
+    try:
+        records = await Shipment.find_all().sort("-created_at").limit(limit).to_list()
+        shipments = [_serialize_shipment_record(record) for record in records]
+        if shipments:
+            return shipments
+    except Exception as exc:
+        logger.warning(f"Shipment DB unavailable, falling back to cached sample shipments: {exc}")
+
+    target_count = max(75, limit)
+    if _sample_shipments_cache is None or len(_sample_shipments_cache) < target_count:
+        _sample_shipments_cache = _generate_sample_shipments(target_count)
+
+    return _sample_shipments_cache[:limit]
+
+
+def _extract_shipment_id(message: str) -> str | None:
+    match = re.search(r"\bSHP-\d{4,}\b", message.upper())
+    return match.group(0) if match else None
+
+
+def _is_obviously_off_topic(message: str) -> bool:
+    normalized = " ".join(message.lower().split())
+    if _extract_shipment_id(normalized) or _is_greeting(normalized):
+        return False
+    if any(hint in normalized for hint in PROJECT_SCOPE_HINTS):
+        return False
+    return any(hint in normalized for hint in OFF_TOPIC_HINTS)
+
+
+def _is_project_scoped_chat(message: str) -> bool:
+    # We let the system prompt handle scoping now to avoid brittle keyword matching
+    return True
+
+
+def _project_scope_refusal() -> str:
+    return (
+        "I can only help with this Anvayaa supply-chain project. "
+        "Ask me about shipment tracking, route optimization, disruptions, forecasts, alerts, or platform behavior."
+    )
+
+
+def _is_greeting(message: str) -> bool:
+    normalized = message.strip().lower()
+    return normalized in {"hi", "hello", "hey", "hii", "hola", "good morning", "good afternoon", "good evening"}
+
+
+def _normalize_context_shipment(shipment: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": str(shipment.get("id", "")),
+        "origin": str(shipment.get("origin", "Unknown")),
+        "destination": str(shipment.get("destination", "Unknown")),
+        "cargoType": str(shipment.get("cargoType", shipment.get("cargo_type", "Unknown"))),
+        "priority": str(shipment.get("priority", "normal")),
+        "currentStatus": str(shipment.get("currentStatus", shipment.get("current_status", "unknown"))),
+        "riskScore": float(shipment.get("riskScore", shipment.get("risk_score", 0.0)) or 0.0),
+        "delay": float(shipment.get("delay", 0.0) or 0.0),
+        "expectedArrival": str(shipment.get("expectedArrival", shipment.get("expected_arrival", "Unknown"))),
+        "cargoValue": float(shipment.get("cargoValue", shipment.get("cargo_value", 0.0)) or 0.0),
+    }
+
+
+def _normalize_context_disruption(disruption: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": str(disruption.get("id", "")),
+        "location": str(disruption.get("location", "Unknown")),
+        "disruption_type": str(disruption.get("disruptionType", disruption.get("disruption_type", "unknown"))),
+        "predicted_severity": float(disruption.get("predictedSeverity", disruption.get("predicted_severity", 0.0)) or 0.0),
+        "probability": float(disruption.get("probability", 0.0) or 0.0),
+        "status": str(disruption.get("status", "active")),
+    }
+
+
+async def _resolve_assistant_shipments(context: Optional[Dict[str, List[Dict[str, Any]]]]) -> List[Dict[str, Any]]:
+    context_shipments = (context or {}).get("shipments") or []
+    if context_shipments:
+        return [_normalize_context_shipment(shipment) for shipment in context_shipments]
+    return await _get_shipments_snapshot(200)
+
+
+async def _resolve_assistant_disruptions(context: Optional[Dict[str, List[Dict[str, Any]]]]) -> List[Dict[str, Any]]:
+    context_disruptions = (context or {}).get("disruptions") or []
+    if context_disruptions:
+        return [_normalize_context_disruption(disruption) for disruption in context_disruptions]
+
+    disruptions_res = await get_disruptions(location=None, severity=None, disruption_type=None, limit=8)
+    return disruptions_res.get("disruptions", [])
+
+
+def _extract_retry_after_seconds_from_text(text: str) -> int | None:
+    if not text:
+        return None
+
+    integer_match = re.search(r"retry(?: after)?\D+(\d+)\s*(second|seconds|sec|s)\b", text, re.IGNORECASE)
+    if integer_match:
+        return max(int(integer_match.group(1)), 1)
+
+    minute_match = re.search(r"retry(?: after)?\D+(\d+)\s*(minute|minutes|min|m)\b", text, re.IGNORECASE)
+    if minute_match:
+        return max(int(minute_match.group(1)) * 60, 60)
+
+    generic_seconds_match = re.search(r"(\d+)\s*(second|seconds|sec|s)\b", text, re.IGNORECASE)
+    if generic_seconds_match:
+        return max(int(generic_seconds_match.group(1)), 1)
+
+    generic_minutes_match = re.search(r"(\d+)\s*(minute|minutes|min|m)\b", text, re.IGNORECASE)
+    if generic_minutes_match:
+        return max(int(generic_minutes_match.group(1)) * 60, 60)
+
+    return None
+
+
+def _extract_retry_after_seconds(response: httpx.Response) -> int:
+    header_value = response.headers.get("Retry-After")
+    if header_value:
+        if header_value.isdigit():
+            return max(int(header_value), 1)
+        try:
+            retry_at = datetime.strptime(header_value, "%a, %d %b %Y %H:%M:%S GMT").replace(tzinfo=timezone.utc)
+            delta = int((retry_at - datetime.now(timezone.utc)).total_seconds())
+            if delta > 0:
+                return delta
+        except ValueError:
+            pass
+
+    try:
+        payload = response.json()
+        payload_text = str(payload)
+    except ValueError:
+        payload_text = response.text
+
+    return _extract_retry_after_seconds_from_text(payload_text) or 60
+
+
+def _build_rate_limit_reply(retry_after_seconds: int) -> str:
+    retry_after_seconds = max(retry_after_seconds, 1)
+    return (
+        "The Gemini API rate limit is active right now. "
+        f"Please wait about **{retry_after_seconds} seconds** before sending the next assistant message."
+    )
+
+
+def _format_shipment_details(shipment: Dict[str, Any]) -> str:
+    return "\n".join([
+        f"Here are the details for **{shipment['id']}**:",
+        f"* **Origin:** {shipment['origin'].replace('_', ' ')}",
+        f"* **Destination:** {shipment['destination'].replace('_', ' ')}",
+        f"* **Cargo Type:** {shipment['cargoType']}",
+        f"* **Priority:** {shipment['priority'].replace('-', ' ')}",
+        f"* **Status:** **{shipment['currentStatus'].replace('_', ' ')}**",
+        f"* **Risk Score:** {round(float(shipment['riskScore']) * 100, 1)}%",
+        f"* **Delay:** {shipment['delay']} hours",
+        f"* **ETA:** {shipment['expectedArrival']}",
+        f"* **Cargo Value:** ${float(shipment['cargoValue']):,.0f}",
+    ])
+
+
+async def _build_structured_assistant_reply(
+    latest_user_message: str,
+    context: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> str | None:
+    normalized = " ".join(latest_user_message.lower().split())
+    shipments = await _resolve_assistant_shipments(context)
+    disruptions = await _resolve_assistant_disruptions(context)
+
+    if _is_greeting(latest_user_message):
+        return (
+            "Hi! I can help with this Anvayaa supply-chain project. Ask me about shipments, route optimization, "
+            "sea-only routing, disruptions, alerts, forecasts, or a shipment ID like **SHP-1015**."
+        )
+
+    shipment_id = _extract_shipment_id(latest_user_message)
+    if shipment_id:
+        match = next((shipment for shipment in shipments if shipment["id"].upper() == shipment_id), None)
+        if match:
+            return _format_shipment_details(match)
+        return f"I could not find **{shipment_id}** in the current shipment dataset shown by this app."
+
+    if "critical shipment" in normalized or "critical shipments" in normalized:
+        critical = [shipment for shipment in shipments if shipment["currentStatus"] == "critical"][:8]
+        if not critical:
+            return "There are no shipments currently marked as **critical** in the live dataset."
+        lines = ["Here are the current **critical shipments**:"]
+        for shipment in critical:
+            lines.append(
+                f"* **{shipment['id']}**: {shipment['origin'].replace('_', ' ')} -> "
+                f"{shipment['destination'].replace('_', ' ')}, delay {shipment['delay']}h"
+            )
+        return "\n".join(lines)
+
+    if "delayed shipment" in normalized or "delayed shipments" in normalized:
+        delayed = [shipment for shipment in shipments if shipment["currentStatus"] == "delayed"][:8]
+        if not delayed:
+            return "There are no shipments currently marked as **delayed** in the live dataset."
+        lines = ["Here are the current **delayed shipments**:"]
+        for shipment in delayed:
+            lines.append(
+                f"* **{shipment['id']}**: {shipment['origin'].replace('_', ' ')} -> "
+                f"{shipment['destination'].replace('_', ' ')}, delay {shipment['delay']}h"
+            )
+        return "\n".join(lines)
+
+    if "shipment" in normalized and ("how many" in normalized or "count" in normalized):
+        return f"There are currently **{len(shipments)} shipments** in the dataset used by this app."
+
+    if "recent shipment" in normalized or "recent shipments" in normalized or "what are my shipments" in normalized or "list shipments" in normalized:
+        if not shipments:
+            return "No shipments found in the current system dataset."
+        lines = ["Based on the current real-time data, here are the most recent shipments:"]
+        for shipment in shipments[:10]:
+            lines.append(
+                f"* **{shipment['id']}**: {shipment['origin'].replace('_', ' ')} to "
+                f"{shipment['destination'].replace('_', ' ')} (**{shipment['currentStatus'].replace('_', ' ')}**)"
+            )
+        return "\n".join(lines)
+
+    if ("mumbai" in normalized and "rotterdam" in normalized) or ("optimize" in normalized and "route" in normalized):
+        return "\n".join([
+            "To optimize a route (e.g., from **Mumbai** to **Rotterdam**), please use the **Route Optimization** page on the sidebar.",
+            "* **Step 1:** Select **Mumbai** as your Origin Port.",
+            "* **Step 2:** Select **Rotterdam** as your Destination Port.",
+            "* **Step 3:** Choose between **Sea + Land** (A* search) or **Only Sea** (Bezier curves) modes.",
+            "* **Step 4:** Click **'Find Optimized Route'** to see the live risk analysis, distance, and ETA calculation.",
+            "The platform will then calculate the safest path avoiding any active disruptions like the ones currently reported in the Suez Canal or North Sea."
+        ])
+
+    if "shipment id" in normalized or "tell me about shipments" in normalized or "shipment details" in normalized:
+        return "\n".join([
+            "You can ask me about any specific shipment ID shown on the dashboard (e.g., **SHP-1002**).",
+            "I can provide details on its origin, destination, cargo value, risk score, and any predicted delays.",
+            "Currently, we are tracking **" + str(len(shipments)) + " shipments** across global lanes including Shanghai, Rotterdam, Dubai, and Mumbai."
+        ])
+
+    if "active disruptions" in normalized or "current disruptions" in normalized or "disruptions" == normalized:
+        if not disruptions:
+            return "There are no active disruptions in the current app dataset."
+        lines = ["Here are the current **active disruptions**:"]
+        for disruption in disruptions[:8]:
+            lines.append(
+                f"* **{disruption['disruption_type'].replace('_', ' ').title()}** at "
+                f"{disruption['location'].replace('_', ' ')} "
+                f"(severity {round(float(disruption.get('predicted_severity', 0.0)), 2)})"
+            )
+        return "\n".join(lines)
+
+    if "weather disruption" in normalized or "weather disruptions" in normalized:
+        weather_disruptions = [
+            disruption
+            for disruption in disruptions
+            if "weather" in disruption["disruption_type"].lower() and disruption.get("status") == "active"
+        ]
+        if not weather_disruptions:
+            return "There are no active **weather disruptions** in the current app dataset."
+        lines = ["Here are the current **active weather disruptions**:"]
+        for disruption in weather_disruptions[:8]:
+            lines.append(
+                f"* **{disruption['location'].replace('_', ' ')}** "
+                f"(severity {round(float(disruption.get('predicted_severity', 0.0)), 2)})"
+            )
+        return "\n".join(lines)
+
+    if "severity" in normalized and "shanghai" in normalized:
+        shanghai_disruptions = [
+            disruption
+            for disruption in disruptions
+            if "shanghai" in disruption["location"].lower() and disruption.get("status") == "active"
+        ]
+        if not shanghai_disruptions:
+            return "There are no active disruptions at **Port of Shanghai** in the current app dataset."
+        top = max(shanghai_disruptions, key=lambda disruption: float(disruption.get("predicted_severity", 0.0)))
+        return (
+            f"Yes, there is an active **{top['disruption_type'].replace('_', ' ')}** disruption at "
+            f"**{top['location'].replace('_', ' ')}** with a current severity of "
+            f"**{round(float(top.get('predicted_severity', 0.0)), 2)}**."
+        )
+
+    if "route optimization" in normalized or "route optimiser" in normalized or "route optimizer" in normalized:
+        return "\n".join([
+            "The **route optimization** feature combines live network data with AI risk signals to improve shipment planning.",
+            "* It compares origin and destination ports using the route graph already built into the platform.",
+            "* In **Sea + Land** mode it can use the full route network, while **Only Sea** mode stays on maritime corridors.",
+            "* It weighs distance, delay risk, and disruptions before recommending the optimized path.",
+            "* The map then renders the optimized route and the dashboard cards show distance, transit time, cost, and risk impact.",
+        ])
+
+    if normalized.startswith("tell me about ") or normalized.startswith("what about "):
+        query = normalized.replace("tell me about ", "", 1).replace("what about ", "", 1).strip()
+        matched_disruptions = [
+            disruption
+            for disruption in disruptions
+            if query and (
+                query in disruption["location"].lower().replace("_", " ")
+                or query in disruption["disruption_type"].lower().replace("_", " ")
+                or all(
+                    token in f"{disruption['disruption_type']} {disruption['location']}".lower().replace("_", " ")
+                    for token in query.split()
+                )
+            )
+        ]
+        if matched_disruptions:
+            lines = [f"Here is what I found about **{query.title()}**:"]
+            for disruption in matched_disruptions[:5]:
+                lines.append(
+                    f"* **{disruption['disruption_type'].replace('_', ' ').title()}** at "
+                    f"{disruption['location'].replace('_', ' ')} "
+                    f"(severity {round(float(disruption.get('predicted_severity', 0.0)), 2)}, "
+                    f"status {disruption.get('status', 'active')})"
+                )
+            return "\n".join(lines)
+
+    return None
+
+
+async def _generate_gemini_project_reply(
+    messages: List[AssistantMessage],
+    context: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> str:
+    current_settings = get_settings()
+    request_messages = messages[-10:]
+    latest_user_message = next((message.content for message in reversed(request_messages) if message.role == "user"), "")
+
+    if not latest_user_message:
+        raise HTTPException(status_code=400, detail="A user message is required.")
+
+    if not current_settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Gemini API key is not configured on the backend.",
+        )
+
+    # Fetch live data context
+    disruption_text = "Data temporarily unavailable."
+    shipment_text = "Data temporarily unavailable."
+
+    try:
+        disruptions_info = await _resolve_assistant_disruptions(context)
+        if disruptions_info:
+            disruption_text = "\n".join([f"- {d['disruption_type'].replace('_', ' ').title()} at {d['location'].replace('_', ' ')} (Severity: {d.get('predicted_severity', 0.0)})" for d in disruptions_info])
+        else:
+            disruption_text = "No active major disruptions reported."
+    except Exception as e:
+        logger.error(f"Assistant disruption context failed: {e}")
+
+    try:
+        shipments_info = await _resolve_assistant_shipments(context)
+        shipment_id = _extract_shipment_id(latest_user_message)
+        if shipment_id:
+            matched = next((shipment for shipment in shipments_info if shipment["id"].upper() == shipment_id), None)
+            if matched:
+                shipment_text = _format_shipment_details(matched)
+            else:
+                shipment_text = f"Shipment {shipment_id} is not present in the current shipment dataset."
+        elif shipments_info:
+            shipment_text = "\n".join([
+                f"- ID: {s['id']}, {s['origin'].replace('_', ' ')} -> {s['destination'].replace('_', ' ')}, "
+                f"Status: {s['currentStatus'].replace('_', ' ')}"
+                for s in shipments_info[:10]
+            ])
+        else:
+            shipment_text = "No active shipments found in system."
+    except Exception as e:
+        logger.error(f"Assistant shipment context failed: {e}")
+
+    dynamic_prompt = f"""You are the Anvayaa Supply Chain Platform AI assistant.
+
+You must answer questions based on the real-time project data provided below.
+If the user asks for current weather, disruptions, or shipment details, use this data to answer accurately.
+
+Current Real-Time System Data:
+---
+Recent Shipments:
+{shipment_text}
+
+Active Disruptions & Weather:
+{disruption_text}
+---
+
+FORMATTING RULES:
+1. Use clean bulleted lists for multiple items.
+2. Bold the **Shipment IDs** and **Statuses**.
+3. Keep the response professional, clear, and highly structured.
+4. If asked about the platform generally, highlight its resilience features (Live Tracking, AI Forecasting, Route Optimization).
+5. If asked about something unrelated to this supply chain project, politely redirect the user.
+"""
+
+    contents = [
+        {
+            "role": "model" if message.role == "assistant" else "user",
+            "parts": [{"text": message.content}],
+        }
+        for message in request_messages
+    ]
+
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": dynamic_prompt}],
+        },
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.3,
+            "topP": 0.9,
+            "maxOutputTokens": 2048,
+        },
+    }
+
+    endpoint = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{current_settings.GEMINI_MODEL}:generateContent"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                endpoint,
+                params={"key": current_settings.GEMINI_API_KEY},
+                json=payload,
+            )
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            retry_after_seconds = _extract_retry_after_seconds(exc.response)
+            logger.warning(f"Gemini API rate limit hit. Retry after about {retry_after_seconds}s.")
+            raise HTTPException(
+                status_code=429,
+                detail=_build_rate_limit_reply(retry_after_seconds),
+            ) from exc
+        logger.error(f"Gemini API HTTP error: {exc.response.text}")
+        raise HTTPException(status_code=502, detail=f"Gemini API error: {exc.response.text}") from exc
+    except httpx.HTTPError as exc:
+        logger.error(f"Gemini API connection error: {exc}")
+        raise HTTPException(status_code=502, detail="Unable to reach Gemini API or request timed out.") from exc
+
+    data = response.json()
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise HTTPException(status_code=502, detail="Gemini returned no response.")
+
+    parts = (((candidates[0] or {}).get("content") or {}).get("parts")) or []
+    reply = "\n".join(part.get("text", "").strip() for part in parts if part.get("text")).strip()
+    if not reply:
+        raise HTTPException(status_code=502, detail="Gemini returned an empty response.")
+
+    return reply
+
+
+@router.post(
+    "/assistant/chat",
+    response_model=AssistantChatResponse,
+    tags=["Assistant"],
+    summary="Project-scoped AI chat for the Anvayaa platform",
+)
+async def assistant_chat(request: AssistantChatRequest) -> AssistantChatResponse:
+    latest_user_message = next((msg.content for msg in reversed(request.messages) if msg.role == "user"), "")
+    if not latest_user_message:
+        raise HTTPException(status_code=400, detail="A user message is required.")
+
+    if _is_obviously_off_topic(latest_user_message):
+        return AssistantChatResponse(reply=_project_scope_refusal(), scoped=True)
+
+    if not _is_project_scoped_chat(latest_user_message):
+        return AssistantChatResponse(reply=_project_scope_refusal(), scoped=True)
+
+    structured_reply = await _build_structured_assistant_reply(latest_user_message, request.context)
+    if structured_reply:
+        return AssistantChatResponse(reply=structured_reply, scoped=True)
+
+    try:
+        reply = await _generate_gemini_project_reply(request.messages, request.context)
+        return AssistantChatResponse(reply=reply, scoped=True)
+    except HTTPException as exc:
+        if exc.status_code == 429:
+            retry_after_seconds = _extract_retry_after_seconds_from_text(str(exc.detail)) or 60
+            return AssistantChatResponse(
+                reply=str(exc.detail),
+                scoped=True,
+                retryAfterSeconds=retry_after_seconds,
+            )
+        if exc.status_code in {502, 503}:
+            return AssistantChatResponse(
+                reply=(
+                    "I can still help with shipment, disruption, route, and platform questions, but the live Gemini "
+                    "assistant is unavailable right now. Try asking for a shipment ID, critical shipments, delayed "
+                    "shipments, route optimization, or current disruptions."
+                ),
+                scoped=True,
+            )
+        raise
 
 
 # ── ENDPOINT 1: GET /disruptions ──────────────────────────────────────────────
@@ -284,23 +844,20 @@ async def get_disruptions(
     disruptions = []
     
     # 1. Fetch live marine weather for all hubs to create real-time risk zones
-    for loc in DEFAULT_LOCATIONS:
+    async def _fetch_loc(loc: str):
         try:
             weather = await fetch_weather_data(loc)
-            if not weather: continue
+            if not weather: return None
             
             sev_str = weather.get("severity", "low")
             sev_val = {"low": 0.2, "medium": 0.5, "high": 0.75, "critical": 0.95}.get(sev_str.lower(), 0.2)
-            
-            # Artificial boost for demo visibility if weather is too calm
             if sev_val < 0.35:
                 sev_val = 0.35
             
             coords = _coord_for_location(loc)
-            # Dynamic radius scales with weather intensity (80km to 400km)
             radius = 100 + (sev_val * 300)
             
-            disruptions.append({
+            return {
                 "id": f"live-weather-{loc.replace(' ', '-')}-{int(time.time()/3600)}",
                 "location": loc,
                 "coords": coords,
@@ -316,14 +873,17 @@ async def get_disruptions(
                 "recommended_action": f"Marine Warning: {weather.get('weather_condition', 'Stormy conditions')}. Wave Height: {weather.get('wave_height', 'N/A')}m",
                 "affected_shipments": random.randint(3, 12),
                 "status": "active",
-            })
+            }
         except Exception as e:
             logger.error(f"Error fetching live weather for {loc}: {e}")
+            return None
 
-    # 2. Append predictive disruptions from SQLite DB (port congestion, mechanical, etc)
+    weather_results = await asyncio.gather(*[_fetch_loc(loc) for loc in DEFAULT_LOCATIONS])
+    disruptions.extend([r for r in weather_results if r])
+
+    # 2. Append predictive disruptions from MongoDB (port congestion, mechanical, etc)
     try:
-        db = SessionLocal()
-        records = db.query(DisruptionPrediction).filter(DisruptionPrediction.status == "active").all()
+        records = await DisruptionPrediction.find(DisruptionPrediction.status == "active").to_list()
         for r in records:
             # Avoid duplicating weather if we already have a live one for the same location
             if r.disruption_type == "weather" and any(d["location"] == r.location for d in disruptions):
@@ -350,9 +910,8 @@ async def get_disruptions(
                 "affected_shipments": r.affected_shipments_count,
                 "status": r.status,
             })
-        db.close()
     except Exception as e:
-        logger.error(f"DB Disruption fetch failed: {e}")
+        logger.error(f"MongoDB Disruption fetch failed: {e}")
 
     # Apply filters
     if location:
@@ -517,7 +1076,7 @@ async def optimize_route(
                 "optimized_waypoints": normalized_waypoints,
                 "estimated_time_savings_minutes": 0,
                 "disruption_avoidance_score": 0.0,
-                "algorithm": "NEXUS Hybrid (Coordinate Compatibility)",
+                "algorithm": "Anvayaa Hybrid (Coordinate Compatibility)",
                 "backend_forecast_applied": False,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -548,7 +1107,7 @@ async def optimize_route(
             return {
                 "optimized_waypoints": fallback_waypoints,
                 "estimated_time_savings_minutes": 0,
-                "algorithm": "NEXUS Hybrid (Direct Fallback)",
+                "algorithm": "Anvayaa Hybrid (Direct Fallback)",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
@@ -575,7 +1134,7 @@ async def optimize_route(
             "optimized_waypoints": optimized_waypoints,
             "estimated_time_savings_minutes": round(route.total_time * 60 * 0.15, 1),
             "disruption_avoidance_score": round(1.0 - route.risk_score, 2),
-            "algorithm": "NEXUS Hybrid Engine (Roadmap v1)",
+            "algorithm": "Anvayaa Hybrid Engine (Roadmap v1)",
             "backend_forecast_applied": True,
             "total_cost": round(route.total_cost, 2),
             "total_time": round(route.total_time, 1),

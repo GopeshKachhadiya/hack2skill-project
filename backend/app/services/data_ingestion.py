@@ -120,7 +120,7 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
     5. Return structured dict
     """
     cache_key = f"weather:{location.lower().replace(' ', '_')}"
-    cached = None # cache_get(cache_key)
+    cached = cache_get(cache_key)
     if cached:
         logger.debug(f"Weather cache HIT: {location}")
         return cached

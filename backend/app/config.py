@@ -25,7 +25,8 @@ class Settings(BaseSettings):
 
     # ── Database ───────────────────────────────────────────────
     DATABASE_URL: str = "sqlite:///./sql_app.db"
-    MONGODB_DB_NAME: str = "nexus_supply_chain"
+    MONGODB_URL: str = "mongodb+srv://hack2skill:LeFGvWiiTx2fSBn1@cluster0.vqixpzk.mongodb.net/?appName=Cluster0"
+    MONGODB_DB_NAME: str = "anvayaa_supply_chain"
 
     # ── Redis ──────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -40,6 +41,8 @@ class Settings(BaseSettings):
 
     # ── External API Keys ─────────────────────────────────────
     OPENROUTESERVICE_API_KEY: str = "your_openrouteservice_api_key_here"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # ── Prophet Model Storage ──────────────────────────────────
     MODEL_STORAGE_PATH: str = "./models"
@@ -57,7 +60,6 @@ class Settings(BaseSettings):
     METRICS_INTERVAL_HOURS: int = 24
 
 
-@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return the singleton Settings instance (cached after first call)."""
+    """Return the Settings instance."""
     return Settings()

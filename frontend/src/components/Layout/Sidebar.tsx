@@ -11,7 +11,7 @@ const navItems = [
   { to: '/shipments', icon: <Package size={16} />, label: 'Shipments' },
   { to: '/analytics', icon: <BarChart3 size={16} />, label: 'Analytics' },
   { to: '/alerts', icon: <Bell size={16} />, label: 'Alerts' },
-  { to: '/health', icon: <Shield size={16} />, label: 'System Health' },
+
 ];
 
 export default function Sidebar() {
@@ -24,7 +24,7 @@ export default function Sidebar() {
       <div className="sidebar-logo">
         <div className="sidebar-logo-icon">🚀</div>
         <div>
-          <div className="sidebar-logo-text">NEXUS</div>
+          <div className="sidebar-logo-text">Anvayaa</div>
           <div className="sidebar-logo-sub">Supply Chain Platform</div>
         </div>
       </div>

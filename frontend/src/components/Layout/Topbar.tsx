@@ -12,7 +12,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/shipments': '📦 Shipments',
   '/analytics': '📈 Analytics',
   '/alerts': '🔔 Disruption Alerts',
-  '/health': '🛡️ System Health',
+
 };
 
 export default function Topbar() {
@@ -22,7 +22,7 @@ export default function Topbar() {
   const { data: disruptions = [] } = useDisruptions();
   const qc = useQueryClient();
 
-  const title = PAGE_TITLES[location.pathname] ?? 'NEXUS Supply Chain';
+  const title = PAGE_TITLES[location.pathname] ?? 'Anvayaa Supply Chain';
   const activeAlerts = disruptions.filter(d => d.status === 'active' && d.predictedSeverity > 0.5).length;
 
   function refresh() {

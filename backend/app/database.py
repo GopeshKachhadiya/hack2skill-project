@@ -40,7 +40,7 @@ def SessionLocal() -> _FallbackSession:
 async def init_db() -> None:
     """Initialize Beanie if Mongo is available; otherwise keep the app running in fallback mode."""
     mongo_url = getattr(settings, "MONGODB_URL", "") or getattr(settings, "DATABASE_URL", "")
-    mongo_db_name = getattr(settings, "MONGODB_DB_NAME", "nexus_supply_chain")
+    mongo_db_name = getattr(settings, "MONGODB_DB_NAME", "anvayaa_supply_chain")
 
     if not mongo_url.startswith("mongodb"):
         logger.warning("MongoDB URL not configured; running with in-memory/database fallback only.")

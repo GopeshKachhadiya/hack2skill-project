@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.api import routes as api_routes
 
 client = TestClient(app)
 
@@ -57,6 +58,136 @@ def test_get_disruptions_severity_filter():
     for sev in ["low", "medium", "high", "critical"]:
         resp = client.get(f"/api/v1/disruptions?severity={sev}")
         assert resp.status_code == 200
+
+
+def test_assistant_chat_returns_shipment_details_from_context():
+    resp = client.post(
+        "/api/v1/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "tell me details about this SHP-1015 ship"}],
+            "context": {
+                "shipments": [
+                    {
+                        "id": "SHP-1015",
+                        "origin": "Port of Shanghai",
+                        "destination": "Port of Rotterdam",
+                        "cargoType": "Container",
+                        "priority": "urgent",
+                        "currentStatus": "critical",
+                        "riskScore": 0.92,
+                        "delay": 18.0,
+                        "expectedArrival": "2026-04-28T04:11:00Z",
+                        "cargoValue": 3705506,
+                    }
+                ]
+            },
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "SHP-1015" in data["reply"]
+    assert "Port of Shanghai" in data["reply"]
+    assert "Port of Rotterdam" in data["reply"]
+
+
+def test_assistant_chat_refuses_off_topic_question():
+    resp = client.post(
+        "/api/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Who won the football match yesterday?"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Anvayaa supply-chain project" in data["reply"]
+
+
+def test_assistant_chat_handles_greeting():
+    resp = client.post(
+        "/api/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Hi!" in data["reply"]
+    assert "SHP-1015" in data["reply"]
+
+
+def test_assistant_chat_handles_in_scope_general_question():
+    resp = client.post(
+        "/api/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Explain the route optimization feature"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data["reply"], str)
+    assert len(data["reply"].strip()) > 0
+
+
+def test_assistant_chat_returns_shanghai_disruption_severity_from_context():
+    resp = client.post(
+        "/api/v1/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "What is the current severity of disruptions at the Port of Shanghai?"}],
+            "context": {
+                "disruptions": [
+                    {
+                        "id": "d-1",
+                        "location": "Port of Shanghai",
+                        "disruptionType": "weather",
+                        "predictedSeverity": 0.35,
+                        "probability": 0.72,
+                        "status": "active",
+                    }
+                ]
+            },
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Port of Shanghai" in data["reply"]
+    assert "0.35" in data["reply"]
+
+
+def test_assistant_chat_handles_tell_me_about_disruption():
+    resp = client.post(
+        "/api/v1/assistant/chat",
+        json={
+            "messages": [{"role": "user", "content": "tell me about mechanical bay of biscay"}],
+            "context": {
+                "disruptions": [
+                    {
+                        "id": "d-2",
+                        "location": "Bay_of_Biscay",
+                        "disruptionType": "mechanical",
+                        "predictedSeverity": 0.81,
+                        "probability": 0.63,
+                        "status": "active",
+                    }
+                ]
+            },
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Mechanical" in data["reply"]
+    assert "Bay of Biscay" in data["reply"]
+
+
+def test_assistant_chat_returns_retry_seconds_on_rate_limit(monkeypatch):
+    async def fake_generate(*args, **kwargs):
+        raise api_routes.HTTPException(
+            status_code=429,
+            detail="The Gemini API rate limit is active right now. Please wait about **42 seconds** before sending the next assistant message.",
+        )
+
+    monkeypatch.setattr(api_routes, "_generate_gemini_project_reply", fake_generate)
+    resp = client.post(
+        "/api/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "Summarize the forecasting module"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["retryAfterSeconds"] == 42
+    assert "42 seconds" in data["reply"]
 
 
 # ── Shipment Analysis ─────────────────────────────────────────────────────────
