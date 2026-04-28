@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Map, BarChart3, Zap, Bell, Package, Shield
+  LayoutDashboard, Map, BarChart3, Zap, Bell, Package
 } from 'lucide-react';
 import { useDisruptions } from '../../hooks/useDisruptions';
 
