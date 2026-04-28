@@ -1,10 +1,14 @@
 
-
-import type { Shipment, Disruption, ForecastDataPoint, ForecastSeries, ModelPerformanceMetrics, SystemHealth } from '../types';
+import type { Shipment, Disruption, ForecastDataPoint, ForecastSeries, ModelPerformanceMetrics, SystemHealth, Coordinate } from '../types';
 import { SHIPPING_NODES } from './constants';
+import { buildSeaOnlyGraph } from './seaRouting';
+import { aStar, getRouteCoordinates } from './astar';
 
 const CARGO_TYPES = ['Container', 'Bulk', 'Refrigerated', 'Tanker', 'Air Freight', 'Breakbulk'];
 const DISRUPTION_TYPES = ['port_congestion', 'weather', 'traffic', 'mechanical', 'customs', 'geopolitical'] as const;
+
+// Build the maritime graph once – it's expensive, so we cache it at module level
+const SEA_GRAPH = buildSeaOnlyGraph(SHIPPING_NODES.filter((n) => n.type === 'port'));
 
 function randomBetween(min: number, max: number): number {
   return Math.random() * (max - min) + min;
@@ -22,7 +26,62 @@ function hoursAgo(h: number): string {
   return new Date(Date.now() - h * 3600000).toISOString();
 }
 
+/**
+ * Given a polyline of coordinates and a progress fraction [0,1],
+ * returns the coordinate that lies that fraction of the total path length
+ * along the route (great-circle segment lengths).
+ */
+function interpolateAlongRoute(route: Coordinate[], progress: number): Coordinate {
+  if (route.length === 0) return { lat: 0, lng: 0 };
+  if (route.length === 1) return route[0];
+
+  // Compute cumulative segment lengths
+  const segLengths: number[] = [];
+  let total = 0;
+  for (let i = 0; i < route.length - 1; i++) {
+    const a = route[i];
+    const b = route[i + 1];
+    const d = Math.hypot(b.lat - a.lat, b.lng - a.lng); // fast approx – fine for interpolation
+    segLengths.push(d);
+    total += d;
+  }
+
+  const target = progress * total;
+  let accumulated = 0;
+  for (let i = 0; i < segLengths.length; i++) {
+    if (accumulated + segLengths[i] >= target) {
+      const t = segLengths[i] === 0 ? 0 : (target - accumulated) / segLengths[i];
+      const a = route[i];
+      const b = route[i + 1];
+      return {
+        lat: a.lat + (b.lat - a.lat) * t,
+        lng: a.lng + (b.lng - a.lng) * t,
+      };
+    }
+    accumulated += segLengths[i];
+  }
+
+  return route[route.length - 1];
+}
+
+/**
+ * Returns the sea-route coordinate list for origin→destination.
+ * Falls back to [origin, destination] only if A* finds no path.
+ */
+function getSeaRoute(originId: string, destinationId: string): Coordinate[] {
+  const nodeIds = aStar(originId, destinationId, SEA_GRAPH);
+  if (nodeIds && nodeIds.length >= 2) {
+    return getRouteCoordinates(SEA_GRAPH, nodeIds);
+  }
+  // Fallback: straight line (both ports are in the ocean anyway)
+  const o = SEA_GRAPH.getNode(originId);
+  const d = SEA_GRAPH.getNode(destinationId);
+  if (o && d) return [{ lat: o.latitude, lng: o.longitude }, { lat: d.latitude, lng: d.longitude }];
+  return [];
+}
+
 export function generateMockShipments(count = 75): Shipment[] {
+  const portNodes = SHIPPING_NODES.filter((n) => n.type === 'port');
   const statuses: Shipment['currentStatus'][] = ['on_time', 'delayed', 'critical', 'delivered', 'disrupted'];
   const statusWeights = [0.45, 0.25, 0.1, 0.1, 0.1];
 
@@ -37,9 +96,9 @@ export function generateMockShipments(count = 75): Shipment[] {
   }
 
   return Array.from({ length: count }, (_, i) => {
-    const origin = randomItem(SHIPPING_NODES);
-    let destination = randomItem(SHIPPING_NODES);
-    while (destination.id === origin.id) destination = randomItem(SHIPPING_NODES);
+    const origin = randomItem(portNodes);
+    let destination = randomItem(portNodes);
+    while (destination.id === origin.id) destination = randomItem(portNodes);
 
     const status = pickStatus();
     const delay = status === 'on_time' ? 0 : status === 'delayed' ? randomBetween(1, 8) : randomBetween(8, 48);
@@ -50,10 +109,14 @@ export function generateMockShipments(count = 75): Shipment[] {
       : randomBetween(0, 0.35);
 
     const progress = Math.random();
-    const currentCoords = {
-      lat: origin.latitude + (destination.latitude - origin.latitude) * progress,
-      lng: origin.longitude + (destination.longitude - origin.longitude) * progress,
-    };
+
+    // ── Real maritime route via A* ───────────────────────────────────────────
+    const seaRoute = getSeaRoute(origin.id, destination.id);
+
+    // Ship's current position is interpolated along the actual sea route
+    const currentCoords = seaRoute.length > 0
+      ? interpolateAlongRoute(seaRoute, progress)
+      : { lat: origin.latitude, lng: origin.longitude };
 
     return {
       id: `SHP-${String(i + 1000).padStart(4, '0')}`,
@@ -70,9 +133,9 @@ export function generateMockShipments(count = 75): Shipment[] {
       priority: randomItem(['normal', 'urgent', 'time-sensitive'] as const),
       riskScore,
       delay,
-      route: [
+      // Full sea-lane polyline: ship dots and selected-route lines follow real maritime paths
+      route: seaRoute.length > 0 ? seaRoute : [
         { lat: origin.latitude, lng: origin.longitude },
-        currentCoords,
         { lat: destination.latitude, lng: destination.longitude },
       ],
     } satisfies Shipment;
