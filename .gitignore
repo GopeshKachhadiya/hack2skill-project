@@ -6,3 +6,4 @@ dist/
 *.log
 .vscode/
 .gemini/
+DEPLOYMENT.md
