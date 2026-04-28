@@ -32,7 +32,7 @@ export default function ShipmentsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters */}
+      {}
       <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -60,7 +60,7 @@ export default function ShipmentsPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {}
       <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
         {isLoading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading shipments...</div>
@@ -70,21 +70,21 @@ export default function ShipmentsPage() {
               <thead>
                 <tr>
                   <th onClick={() => toggleSort('id')} style={{ cursor: 'pointer' }}>
-                    ID {sortBy === 'id' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                    ID {sortBy === 'id' ? (sortDir === 'asc' ? ' (asc)' : ' (desc)') : ''}
                   </th>
                   <th>Route</th>
                   <th>Cargo</th>
                   <th>Priority</th>
                   <th>Status</th>
                   <th onClick={() => toggleSort('riskScore')} style={{ cursor: 'pointer' }}>
-                    Risk {sortBy === 'riskScore' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                    Risk {sortBy === 'riskScore' ? (sortDir === 'asc' ? ' (asc)' : ' (desc)') : ''}
                   </th>
                   <th onClick={() => toggleSort('delay')} style={{ cursor: 'pointer' }}>
-                    Delay {sortBy === 'delay' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                    Delay {sortBy === 'delay' ? (sortDir === 'asc' ? ' (asc)' : ' (desc)') : ''}
                   </th>
                   <th>ETA</th>
                   <th onClick={() => toggleSort('cargoValue')} style={{ cursor: 'pointer' }}>
-                    Value {sortBy === 'cargoValue' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                    Value {sortBy === 'cargoValue' ? (sortDir === 'asc' ? ' (asc)' : ' (desc)') : ''}
                   </th>
                 </tr>
               </thead>
@@ -94,7 +94,7 @@ export default function ShipmentsPage() {
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--color-brand)', fontWeight: 600 }}>{s.id}</td>
                     <td>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500 }}>{s.origin}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>→ {s.destination}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>to {s.destination}</div>
                     </td>
                     <td style={{ fontSize: '0.8rem' }}>{s.cargoType}</td>
                     <td>
@@ -136,4 +136,3 @@ export default function ShipmentsPage() {
     </div>
   );
 }
-

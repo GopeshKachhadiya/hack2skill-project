@@ -1,15 +1,4 @@
-"""
-api/routes.py — All REST API endpoints.
 
-Endpoints:
-  GET  /api/v1/health
-  GET  /api/v1/disruptions
-  POST /api/v1/shipments/analyze
-  GET  /api/v1/forecasts/{location}
-  GET  /api/v1/stats/performance
-  POST /api/v1/routes/optimize
-  GET  /api/v1/ingest/trigger     (manual trigger for dev)
-"""
 
 from __future__ import annotations
 
@@ -92,7 +81,6 @@ OFF_TOPIC_HINTS = {
 }
 
 
-# ── Pydantic Schemas ──────────────────────────────────────────────────────────
 
 class ShipmentAnalysisRequest(BaseModel):
     origin: str = Field(..., example="Shanghai")
@@ -188,11 +176,10 @@ class AssistantChatResponse(BaseModel):
     retryAfterSeconds: Optional[int] = None
 
 
-# ── Health Check ──────────────────────────────────────────────────────────────
 
 @router.get("/health", tags=["System"])
 async def health_check() -> Dict:
-    """System health check — used by Railway/Render uptime monitoring."""
+    
     from app.cache import get_redis_client
     services: Dict[str, str] = {}
 
@@ -219,7 +206,7 @@ async def health_check() -> Dict:
 async def get_shipments(
     limit: int = Query(75, ge=1, le=500),
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Return shipment data in the shape used by the frontend."""
+    
     shipments = await _get_shipments_snapshot(limit)
     return {"shipments": shipments}
 
@@ -365,7 +352,6 @@ def _is_obviously_off_topic(message: str) -> bool:
 
 
 def _is_project_scoped_chat(message: str) -> bool:
-    # We let the system prompt handle scoping now to avoid brittle keyword matching
     return True
 
 
@@ -664,7 +650,6 @@ async def _generate_gemini_project_reply(
             detail="Gemini API key is not configured on the backend.",
         )
 
-    # Fetch live data context
     disruption_text = "Data temporarily unavailable."
     shipment_text = "Data temporarily unavailable."
 
@@ -697,27 +682,7 @@ async def _generate_gemini_project_reply(
     except Exception as e:
         logger.error(f"Assistant shipment context failed: {e}")
 
-    dynamic_prompt = f"""You are the Anvayaa Supply Chain Platform AI assistant.
-
-You must answer questions based on the real-time project data provided below.
-If the user asks for current weather, disruptions, or shipment details, use this data to answer accurately.
-
-Current Real-Time System Data:
----
-Recent Shipments:
-{shipment_text}
-
-Active Disruptions & Weather:
-{disruption_text}
----
-
-FORMATTING RULES:
-1. Use clean bulleted lists for multiple items.
-2. Bold the **Shipment IDs** and **Statuses**.
-3. Keep the response professional, clear, and highly structured.
-4. If asked about the platform generally, highlight its resilience features (Live Tracking, AI Forecasting, Route Optimization).
-5. If asked about something unrelated to this supply chain project, politely redirect the user.
-"""
+    dynamic_prompt = f
 
     contents = [
         {
@@ -823,7 +788,6 @@ async def assistant_chat(request: AssistantChatRequest) -> AssistantChatResponse
         raise
 
 
-# ── ENDPOINT 1: GET /disruptions ──────────────────────────────────────────────
 
 @router.get(
     "/disruptions",
@@ -843,7 +807,6 @@ async def get_disruptions(
 
     disruptions = []
     
-    # 1. Fetch live marine weather for all hubs to create real-time risk zones
     async def _fetch_loc(loc: str):
         try:
             weather = await fetch_weather_data(loc)
@@ -881,11 +844,9 @@ async def get_disruptions(
     weather_results = await asyncio.gather(*[_fetch_loc(loc) for loc in DEFAULT_LOCATIONS])
     disruptions.extend([r for r in weather_results if r])
 
-    # 2. Append predictive disruptions from MongoDB (port congestion, mechanical, etc)
     try:
         records = await DisruptionPrediction.find(DisruptionPrediction.status == "active").to_list()
         for r in records:
-            # Avoid duplicating weather if we already have a live one for the same location
             if r.disruption_type == "weather" and any(d["location"] == r.location for d in disruptions):
                 continue
                 
@@ -913,7 +874,6 @@ async def get_disruptions(
     except Exception as e:
         logger.error(f"MongoDB Disruption fetch failed: {e}")
 
-    # Apply filters
     if location:
         disruptions = [d for d in disruptions if location.lower() in d["location"].lower()]
     if disruption_type:
@@ -926,7 +886,6 @@ async def get_disruptions(
     return {"disruptions": disruptions[:limit]}
 
 
-# ── ENDPOINT 2: POST /shipments/analyze ───────────────────────────────────────
 
 @router.post(
     "/shipments/analyze",
@@ -1008,11 +967,10 @@ def _build_recommendations(overall_risk: float, forecasts: Dict) -> List[str]:
     if overall_risk >= 0.75: recs.append("🚨 CRITICAL: Delay shipment or reroute immediately.")
     if forecasts.get("weather_delays", 0) > 0.5: recs.append("Consider weather-avoidance routing.")
     if forecasts.get("port_congestion", 0) > 0.4: recs.append("Pre-book alternative port berth as contingency.")
-    if not recs: recs.append("✅ Route cleared. Proceed with standard monitoring.")
+    if not recs: recs.append(" Route cleared. Proceed with standard monitoring.")
     return recs
 
 
-# ── ENDPOINT 3: GET /forecasts/{location} ────────────────────────────────────
 
 @router.get(
     "/forecasts/{location}",
@@ -1032,7 +990,6 @@ async def get_location_forecast(
         raise HTTPException(status_code=500, detail=f"Forecast generation failed: {exc}")
 
 
-# ── ENDPOINT 4: GET /stats/performance ───────────────────────────────────────
 
 @router.get(
     "/stats/performance",
@@ -1043,7 +1000,6 @@ async def get_model_performance() -> Dict:
     return build_mock_performance_report()
 
 
-# ── ENDPOINT 5: POST /routes/optimize ────────────────────────────────────────
 
 @router.post(
     "/routes/optimize",
@@ -1058,7 +1014,6 @@ async def optimize_route(
         raise HTTPException(status_code=400, detail="At least one waypoint required.")
 
     try:
-        # Keep backward compatibility for simple coordinate-only callers, including the test suite.
         if all(
             waypoint.get("id") is None and waypoint.get("name") is None
             for waypoint in waypoints
@@ -1147,7 +1102,6 @@ async def optimize_route(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-# ── ENDPOINT 6: POST /ingest/trigger (dev helper) ────────────────────────────
 
 @router.post(
     "/ingest/trigger",

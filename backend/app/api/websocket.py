@@ -1,14 +1,4 @@
-"""
-api/websocket.py — WebSocket endpoint for real-time disruption streaming.
 
-Endpoint: ws://host/ws/disruptions
-
-Behaviour:
-  • Client connects → receives full current disruption list immediately
-  • Pushes updates every 30 seconds (new predictions from cache)
-  • Sends ping every 30 seconds to keep connection alive
-  • Broadcasts whenever a new disruption is detected
-"""
 
 from __future__ import annotations
 
@@ -22,10 +12,9 @@ from loguru import logger
 
 from app.services.prediction_engine import get_active_disruptions_from_cache
 
-# ── Connection manager ────────────────────────────────────────────────────────
 
 class ConnectionManager:
-    """Tracks all active WebSocket connections."""
+    
 
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
@@ -52,7 +41,7 @@ class ConnectionManager:
             logger.debug(f"WS send error: {exc}")
 
     async def broadcast(self, message: dict) -> None:
-        """Send *message* to all connected clients."""
+        
         disconnected: Set[WebSocket] = set()
         for connection in self.active_connections:
             try:
@@ -66,17 +55,11 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-# ── WebSocket handler ─────────────────────────────────────────────────────────
 
 async def websocket_disruptions(websocket: WebSocket) -> None:
-    """
-    Main WebSocket handler for the /ws/disruptions endpoint.
-    Registered in main.py with:
-        app.add_api_websocket_route("/ws/disruptions", websocket_disruptions)
-    """
+    
     await manager.connect(websocket)
     try:
-        # Send initial payload immediately on connection
         disruptions = get_active_disruptions_from_cache()
         await manager.send_personal_message(
             {
@@ -88,21 +71,17 @@ async def websocket_disruptions(websocket: WebSocket) -> None:
             websocket,
         )
 
-        # Enter the keep-alive / push loop
         while True:
-            # Wait 30 seconds, but wake up early if client sends a message
             try:
                 client_msg = await asyncio.wait_for(
                     websocket.receive_text(), timeout=30.0
                 )
-                # Handle ping from client
                 if client_msg == "ping":
                     await manager.send_personal_message(
                         {"type": "pong", "timestamp": datetime.now(timezone.utc).isoformat()},
                         websocket,
                     )
             except asyncio.TimeoutError:
-                # 30-second interval — push latest disruptions
                 updated = get_active_disruptions_from_cache()
                 await manager.send_personal_message(
                     {
@@ -122,10 +101,7 @@ async def websocket_disruptions(websocket: WebSocket) -> None:
 
 
 async def broadcast_new_disruption(disruption: dict) -> None:
-    """
-    Called by prediction_engine whenever a new high-probability disruption
-    is detected. Pushes an alert to all connected clients.
-    """
+    
     await manager.broadcast(
         {
             "type": "new_disruption",

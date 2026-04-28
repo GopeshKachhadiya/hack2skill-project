@@ -1,8 +1,6 @@
 import type { Coordinate, Node } from '../types';
 
-/**
- * Calculate haversine distance between two coordinates (in km)
- */
+
 export function haversineDistance(a: Coordinate, b: Coordinate): number {
   const R = 6371; // Earth's radius in km
   const dLat = toRad(b.lat - a.lat);
@@ -21,16 +19,12 @@ function toRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
 
-/**
- * Convert distance (km) and average speed (km/h) to time (hours)
- */
+
 export function distanceToTime(distanceKm: number, speedKmh = 35): number {
   return distanceKm / speedKmh;
 }
 
-/**
- * Get the geographic center of an array of coordinates
- */
+
 export function getCenterCoordinate(coords: Coordinate[]): Coordinate {
   if (coords.length === 0) return { lat: 20, lng: 0 };
   const lat = coords.reduce((sum, c) => sum + c.lat, 0) / coords.length;
@@ -38,9 +32,7 @@ export function getCenterCoordinate(coords: Coordinate[]): Coordinate {
   return { lat, lng };
 }
 
-/**
- * Calculate bounding box for an array of coordinates
- */
+
 export function getBoundingBox(coords: Coordinate[]): {
   north: number;
   south: number;
@@ -57,16 +49,12 @@ export function getBoundingBox(coords: Coordinate[]): {
   };
 }
 
-/**
- * Convert a node to a Coordinate
- */
+
 export function nodeToCoord(node: Node): Coordinate {
   return { lat: node.latitude, lng: node.longitude };
 }
 
-/**
- * Generate a curved path (Bezier curve) between a sequence of points
- */
+
 export function generateCurvedPath(points: [number, number][], curveFactor = 0.2): [number, number][] {
   if (points.length < 2) return points;
 

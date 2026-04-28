@@ -16,7 +16,7 @@ export default function LiveMapPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Controls */}
+      {}
       <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Filter:</span>
         {['all', 'on_time', 'delayed', 'critical', 'disrupted', 'delivered'].map(f => (
@@ -37,7 +37,7 @@ export default function LiveMapPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 320px' : '1fr', gap: 16, transition: 'all 0.3s ease' }}>
-        {/* Map */}
+        {}
         <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ height: 'calc(100vh - 220px)', minHeight: 500 }}>
             <ShipmentMap
@@ -51,17 +51,17 @@ export default function LiveMapPage() {
           </div>
         </div>
 
-        {/* Detail Panel */}
+        {}
         {selected && (
           <div className="glass-card animate-slide-in" style={{ padding: 20, overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
               <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-bright)' }}>
-                📦 {selected.id}
+                ID: {selected.id}
               </div>
-              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setSelected(null)}>✕</button>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setSelected(null)}>X</button>
             </div>
 
-            {/* Status badge */}
+            {}
             <div style={{ marginBottom: 16 }}>
               <span className={`badge badge-${selected.currentStatus === 'on_time' || selected.currentStatus === 'delivered' ? 'success' : selected.currentStatus === 'delayed' ? 'warning' : 'danger'}`}>
                 <span className={`status-dot ${selected.currentStatus} pulse`} />
@@ -86,7 +86,7 @@ export default function LiveMapPage() {
                 </div>
               ))}
 
-              {/* Risk Gauge */}
+              {}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Risk Score</span>
@@ -106,5 +106,3 @@ export default function LiveMapPage() {
     </div>
   );
 }
-
-

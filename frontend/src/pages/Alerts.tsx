@@ -21,7 +21,7 @@ export default function AlertsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Stats Row */}
+      {}
       <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         {[
           { label: 'Total Disruptions', value: disruptions.length, color: 'var(--color-brand)' },
@@ -36,7 +36,7 @@ export default function AlertsPage() {
         ))}
       </div>
 
-      {/* Filters */}
+      {}
       <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <Bell size={15} style={{ color: 'var(--color-brand)' }} />
         <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>Filter:</span>
@@ -57,15 +57,14 @@ export default function AlertsPage() {
           </button>
         ))}
         <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => refetch()}>
-          ↺ Refresh
+          Refresh
         </button>
       </div>
 
-      {/* Alert List */}
+      {}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filtered.length === 0 ? (
           <div className="glass-card" style={{ padding: '50px', textAlign: 'center' }}>
-            <div style={{ fontSize: '3rem', marginBottom: 12 }}>✅</div>
             <div style={{ color: 'var(--color-success)', fontWeight: 700, fontSize: '1.1rem' }}>No disruptions found</div>
             <div style={{ color: 'var(--text-muted)', marginTop: 6 }}>All supply chain routes are operating normally</div>
           </div>
@@ -77,13 +76,13 @@ export default function AlertsPage() {
           return (
             <div key={d.id} className={`glass-card alert-item ${level}`} style={{ padding: 18 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                {/* Icon */}
+                {}
                 <div style={{
                   width: 42, height: 42, borderRadius: 10, flexShrink: 0,
                   background: `${typeColor}20`, border: `1px solid ${typeColor}40`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem'
                 }}>
-                  {d.disruptionType === 'weather' ? '⛈️' : d.disruptionType === 'port_congestion' ? '⚓' : d.disruptionType === 'traffic' ? '🚦' : d.disruptionType === 'mechanical' ? '🔧' : d.disruptionType === 'customs' ? '📋' : '🌍'}
+                  {d.disruptionType.charAt(0).toUpperCase()}
                 </div>
 
                 <div style={{ flex: 1 }}>
@@ -97,7 +96,7 @@ export default function AlertsPage() {
                   </div>
 
                   <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 10 }}>
-                    📍 {d.location}
+                    Location: {d.location}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
@@ -114,18 +113,18 @@ export default function AlertsPage() {
                     ))}
                   </div>
 
-                  {/* Time Window */}
+                  {}
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 10, display: 'flex', gap: 12 }}>
-                    <span>🕐 Window: {formatDate(d.predictedTimeWindow.start)} → {formatDate(d.predictedTimeWindow.end)}</span>
+                    <span>Window: {formatDate(d.predictedTimeWindow.start)} to {formatDate(d.predictedTimeWindow.end)}</span>
                   </div>
 
-                  {/* Recommendation */}
+                  {}
                   <div style={{
                     padding: '10px 14px', background: 'rgba(59,130,246,0.08)',
                     borderRadius: 8, border: '1px solid rgba(59,130,246,0.15)',
                     fontSize: '0.8rem', color: 'var(--text-secondary)',
                   }}>
-                    💡 <strong>Recommendation:</strong> {d.recommendedAction}
+                    <strong>Recommendation:</strong> {d.recommendedAction}
                   </div>
                 </div>
               </div>
@@ -136,5 +135,3 @@ export default function AlertsPage() {
     </div>
   );
 }
-
-

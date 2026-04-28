@@ -44,4 +44,3 @@ def _coord_for_location(name: str) -> Dict[str, float]:
         if port.lower() in name.lower():
             return coords
     return random.choice(list(PORT_COORDS.values()))
-

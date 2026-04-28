@@ -1,7 +1,4 @@
-/**
- * Mock Data Generator for Offline Development
- * Generates realistic-looking supply chain data when backend is unavailable.
- */
+
 
 import type { Shipment, Disruption, ForecastDataPoint, ForecastSeries, ModelPerformanceMetrics, SystemHealth } from '../types';
 import { SHIPPING_NODES } from './constants';
@@ -175,4 +172,3 @@ export function generateMockHealth(): SystemHealth {
     overallHealth: Math.round(randomBetween(85, 99)),
   };
 }
-

@@ -85,4 +85,3 @@ export default function ShipmentMap({ shipments, disruptions, selectedShipment, 
     </div>
   );
 }
-

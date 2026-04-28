@@ -1,6 +1,4 @@
-"""
-services/forecasting.py - Prophet-based disruption forecasting service.
-"""
+
 
 from __future__ import annotations
 

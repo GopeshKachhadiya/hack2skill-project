@@ -2,7 +2,6 @@ import asyncio
 import os
 import sys
 
-# Setup app path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.api.routes import get_shipments, get_disruptions

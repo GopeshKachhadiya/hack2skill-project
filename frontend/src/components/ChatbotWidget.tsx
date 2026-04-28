@@ -27,11 +27,9 @@ function ChatMessageContent({ content }: { content: string }) {
       {lines.map((line, i) => {
         if (!line.trim()) return <div key={i} style={{ height: '8px' }} />;
         
-        // Handle bullet points
         const isBullet = line.trim().startsWith('* ');
         const cleanLine = isBullet ? line.trim().slice(2) : line;
 
-        // Handle bolding **text**
         const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
         const elements = parts.map((part, j) => {
           if (part.startsWith('**') && part.endsWith('**')) {
@@ -66,7 +64,6 @@ export default function ChatbotWidget() {
   const { data: shipments = [] } = useShipments();
   const { data: disruptions = [] } = useDisruptions();
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -218,7 +215,7 @@ export default function ChatbotWidget() {
               background: 'rgba(15, 23, 42, 0.85)'
             }}
           >
-            {/* Header */}
+            {}
             <div className="chat-header-bg" style={{ 
               padding: '16px 20px', 
               display: 'flex', 
@@ -256,7 +253,7 @@ export default function ChatbotWidget() {
               </button>
             </div>
 
-            {/* Messages */}
+            {}
             <div className="chat-scroll" style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {messages.map((msg, idx) => (
                 <div 
@@ -304,7 +301,7 @@ export default function ChatbotWidget() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Error */}
+            {}
             {error && (
               <div style={{ 
                 margin: '0 20px 10px', padding: '10px 14px', borderRadius: '10px',
@@ -329,7 +326,7 @@ export default function ChatbotWidget() {
               </div>
             )}
 
-            {/* Input */}
+            {}
             <div style={{ 
               padding: '16px', 
               background: 'rgba(15, 23, 42, 0.95)', 

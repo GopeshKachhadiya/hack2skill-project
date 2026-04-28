@@ -1,18 +1,4 @@
-"""
-services/data_ingestion.py — Real-time data ingestion from external APIs.
 
-Fetches:
-  1. Weather data  (OpenWeatherMap)
-  2. Traffic data  (Google Maps Directions)
-  3. Port status   (MarineTraffic RSS + World Bank)
-
-All fetches:
-  • Check Redis cache first
-  • Call API on miss
-  • Store raw response in PostgreSQL
-  • Log every call to api_call_logs table
-  • Apply exponential-backoff retry (3 attempts)
-"""
 
 from __future__ import annotations
 
@@ -29,13 +15,11 @@ from loguru import logger
 
 from app.cache import cache_get, cache_set
 from app.config import get_settings
-# from app.database import SessionLocal  # No longer needed
 from app.models.disruption import APICallLog
 from app.models.weather import WeatherData
 
 settings = get_settings()
 
-# ── Internal helpers ──────────────────────────────────────────────────────────
 
 async def _http_get_with_retry(
     url: str,
@@ -44,10 +28,7 @@ async def _http_get_with_retry(
     max_retries: int = 3,
     timeout: float = 10.0,
 ) -> Optional[Dict]:
-    """
-    Async HTTP GET with exponential back-off.
-    Returns parsed JSON dict or None on failure.
-    """
+    
     delay = 1.0
     for attempt in range(1, max_retries + 1):
         start_ms = int(time.time() * 1000)
@@ -80,7 +61,7 @@ async def _log_api_call(
     response_time_ms: int,
     error: Optional[str] = None,
 ) -> None:
-    """Write one row to api_call_logs (best-effort, never raises)."""
+    
     try:
         log = APICallLog(
             api_source=url.split("/")[2] if url else "unknown",
@@ -97,7 +78,7 @@ async def _log_api_call(
 def _classify_weather_severity(
     wave_height: float, wind_speed: float
 ) -> str:
-    """Return a severity label based on marine meteorological conditions."""
+    
     if wave_height > 4.0 or wind_speed > 25:
         return "critical"
     if wave_height > 2.5 or wind_speed > 15:
@@ -107,18 +88,9 @@ def _classify_weather_severity(
     return "low"
 
 
-# ── Weather ───────────────────────────────────────────────────────────────────
 
 async def fetch_weather_data(location: str) -> Optional[Dict]:
-    """
-    Fetch current weather for *location* from OpenWeatherMap.
-
-    1. Check Redis cache (TTL 30 min)
-    2. Call API on miss
-    3. Classify severity
-    4. Store in PostgreSQL + cache
-    5. Return structured dict
-    """
+    
     cache_key = f"weather:{location.lower().replace(' ', '_')}"
     cached = cache_get(cache_key)
     if cached:
@@ -148,7 +120,6 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
         wave_heights = hourly.get("wave_height", [])
         wind_speeds = hourly.get("wind_speed_10m", [])
         
-        # Calculate 24-hour averages
         valid_waves = [w for w in wave_heights[:24] if w is not None]
         valid_winds = [w for w in wind_speeds[:24] if w is not None]
         
@@ -168,8 +139,6 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Persist to DB
-        # Persist to DB
         try:
             record = WeatherData(
                 location=location,
@@ -194,7 +163,7 @@ async def fetch_weather_data(location: str) -> Optional[Dict]:
 
 
 def _mock_weather_data(location: str) -> Dict:
-    """Return plausible mock weather when the API is unavailable."""
+    
     import random
     conditions = ["Calm Seas", "Moderate Waves", "Rough Seas"]
     wave = round(random.uniform(0.5, 4.0), 1)
@@ -210,17 +179,13 @@ def _mock_weather_data(location: str) -> Dict:
     }
 
 
-# ── Traffic ───────────────────────────────────────────────────────────────────
 
 async def fetch_traffic_data(origin: str, destination: str) -> Optional[Dict]:
-    """
-    Fetch traffic/directions data from OpenRouteService API.
-    Falls back to mock data if the API key is not configured.
-    """
+    
     cache_key = f"traffic:{origin.lower()}:{destination.lower()}"
     cached = cache_get(cache_key)
     if cached:
-        logger.debug(f"Traffic cache HIT: {origin} → {destination}")
+        logger.debug(f"Traffic cache HIT: {origin}  {destination}")
         return cached
 
     if not settings.OPENROUTESERVICE_API_KEY or settings.OPENROUTESERVICE_API_KEY.startswith("your_"):
@@ -241,7 +206,7 @@ async def fetch_traffic_data(origin: str, destination: str) -> Optional[Dict]:
 
     raw = await _http_get_with_retry(url, params=params, headers=headers)
     if raw is None or "error" in raw:
-        logger.warning(f"Traffic API failed for route: {origin} → {destination}")
+        logger.warning(f"Traffic API failed for route: {origin}  {destination}")
         return _mock_traffic_data(origin, destination)
 
     try:
@@ -250,7 +215,6 @@ async def fetch_traffic_data(origin: str, destination: str) -> Optional[Dict]:
         distance_m = summary["distance"]
         
         import random
-        # ORS free tier doesn't have real-time traffic delay, so we simulate it
         delay_ratio = random.uniform(0.0, 0.4)
         duration_traffic_s = duration_s * (1 + delay_ratio)
 
@@ -274,7 +238,7 @@ async def fetch_traffic_data(origin: str, destination: str) -> Optional[Dict]:
 
 
 def _mock_traffic_data(origin: str, destination: str) -> Dict:
-    """Return plausible mock traffic when the API is unavailable."""
+    
     import random
     normal = random.randint(120, 600)
     delay = random.randint(0, int(normal * 0.5))
@@ -291,13 +255,9 @@ def _mock_traffic_data(origin: str, destination: str) -> Dict:
     }
 
 
-# ── Port Status ───────────────────────────────────────────────────────────────
 
 async def fetch_port_data() -> List[Dict]:
-    """
-    Scrape port congestion signals from MarineTraffic RSS feed.
-    Falls back to mock data when unavailable.
-    """
+    
     cache_key = "port_status:all"
     cached = cache_get(cache_key)
     if cached:
@@ -332,7 +292,7 @@ async def fetch_port_data() -> List[Dict]:
 
 
 def _mock_port_data() -> List[Dict]:
-    """Mock port status for key global hubs."""
+    
     import random
     ports = [
         "Port of Shanghai", "Port of Singapore", "Port of Rotterdam",
@@ -354,14 +314,9 @@ def _mock_port_data() -> List[Dict]:
     ]
 
 
-# ── Orchestrator ──────────────────────────────────────────────────────────────
 
 async def ingest_all_data(locations: Optional[List[str]] = None) -> Dict:
-    """
-    Parallel ingestion of weather, traffic, and port data.
-
-    Returns an IngestionReport dict.
-    """
+    
     if locations is None:
         locations = [
             "Shanghai", "Singapore", "Rotterdam",
@@ -376,7 +331,6 @@ async def ingest_all_data(locations: Optional[List[str]] = None) -> Dict:
         "ports": {"success": 0, "failed": 0},
     }
 
-    # ── Weather (all locations in parallel) ───────────────────────────────────
     weather_tasks = [fetch_weather_data(loc) for loc in locations]
     weather_results = await asyncio.gather(*weather_tasks, return_exceptions=True)
     for r in weather_results:
@@ -385,7 +339,6 @@ async def ingest_all_data(locations: Optional[List[str]] = None) -> Dict:
         else:
             report["weather"]["success"] += 1
 
-    # ── Traffic (origin → destination pairs) ──────────────────────────────────
     route_pairs = list(zip(locations, locations[1:] + [locations[0]]))
     traffic_tasks = [fetch_traffic_data(o, d) for o, d in route_pairs]
     traffic_results = await asyncio.gather(*traffic_tasks, return_exceptions=True)
@@ -395,7 +348,6 @@ async def ingest_all_data(locations: Optional[List[str]] = None) -> Dict:
         else:
             report["traffic"]["success"] += 1
 
-    # ── Ports ─────────────────────────────────────────────────────────────────
     try:
         ports = await fetch_port_data()
         report["ports"]["success"] = len(ports)

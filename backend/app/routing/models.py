@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from collections import defaultdict
 
 class CostProfile:
-    """Time-dependent cost multipliers."""
+    
     def __init__(self):
         self.hourly_multipliers = [1.0] * 24
         self.daily_multipliers = [1.0] * 7
@@ -19,7 +19,7 @@ class CostProfile:
         )
 
 class Node:
-    """Network location (warehouse, port, terminal, etc.)."""
+    
     def __init__(self, id: str, latitude: float, longitude: float, node_type: str, capacity: float):
         self.id = id
         self.latitude = latitude
@@ -33,7 +33,7 @@ class Node:
         self.time_since_last_incident = float('inf')
 
 class TemporalEdge:
-    """Edge with time-dependent costs and real-time disruption tracking."""
+    
     def __init__(self, id: str, source: str, target: str, transport_mode: str, base_weight: float, base_time: float):
         self.id = id
         self.source = source
@@ -54,22 +54,19 @@ class TemporalEdge:
         self.fuel_cost = 0
 
     def get_cost_at_time(self, departure_time: datetime) -> float:
-        # Base cost
         base = self.base_weight
         
-        # Temporal factors
         hour = departure_time.hour
         day = departure_time.weekday()
         month = departure_time.month
         temporal = self.cost_profile.get_multiplier(hour, day, month)
         
-        # Real-time factors
         disruption = self.real_time_multiplier
         
         return base * temporal * disruption
 
 class Route:
-    """Represents a complete route from origin to destination."""
+    
     def __init__(self, edges: List[TemporalEdge], departure_time: datetime):
         self.edges = edges
         self.departure_time = departure_time
@@ -82,8 +79,6 @@ class Route:
         self.critical_segments = [e for e in edges if e.alternative_count == 0]
 
     def _extract_waypoints(self) -> List[Dict[str, float]]:
-        # For simplicity, we just return source/target of edges
-        # In a real app, this would be GPS coordinates
         return []
 
     def _calculate_total_time(self) -> float:
@@ -100,7 +95,7 @@ class Route:
         return sum(e.disruption_risk[0] for e in self.edges) / len(self.edges)
 
 class TemporalTransportGraph:
-    """Time-dependent multi-modal transportation network."""
+    
     def __init__(self):
         self.nodes: Dict[str, Node] = {}
         self.edges: Dict[str, TemporalEdge] = {}

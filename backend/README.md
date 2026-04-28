@@ -1,8 +1,8 @@
-# 🚀 Supply Chain Resilience Backend
+#  Supply Chain Resilience Backend
 
 Predictive disruption detection engine — FastAPI + Prophet + PostgreSQL + Redis.
 
-## ⚡ Quick Start (5 minutes)
+##  Quick Start (5 minutes)
 
 ### Option A: Docker Compose (recommended)
 
@@ -120,12 +120,12 @@ ReDoc: **http://localhost:8000/redoc**
 
 ---
 
-## 🔧 Background Jobs
+##  Background Jobs
 
 | Job | Interval | Task |
 |-----|----------|------|
 | Data Ingestion | Every 15 min | Fetch weather/traffic/ports |
-| Prediction Cycle | Every 15 min | Run Prophet → detect disruptions |
+| Prediction Cycle | Every 15 min | Run Prophet  detect disruptions |
 | Metrics Evaluation | Daily 01:00 UTC | Compute accuracy metrics |
 | Model Retraining | Weekly (Sun 02:00) | Retrain all 4 Prophet models |
 
@@ -149,10 +149,10 @@ pytest tests/ --cov=app --cov-report=html
 ## 🚢 Deployment (Railway)
 
 1. Create a new Railway project
-2. Add PostgreSQL plugin → copy `DATABASE_URL`
-3. Add Redis plugin → copy `REDIS_URL`
+2. Add PostgreSQL plugin  copy `DATABASE_URL`
+3. Add Redis plugin  copy `REDIS_URL`
 4. Set environment variables in Railway dashboard
-5. Connect GitHub repo → automatic deploys on push
+5. Connect GitHub repo  automatic deploys on push
 
 Railway auto-handles:
 - Dockerfile build
@@ -162,7 +162,7 @@ Railway auto-handles:
 
 ---
 
-## 📊 Prophet Models
+##  Prophet Models
 
 Four specialist models are trained per location:
 
@@ -182,8 +182,8 @@ New models are only deployed if accuracy **improves** on a holdout set.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `REDIS_URL` | ✅ | Redis connection string |
-| `OPENWEATHER_API_KEY` | ✅ | [Get free key](https://openweathermap.org/api) |
+| `DATABASE_URL` |  | PostgreSQL connection string |
+| `REDIS_URL` |  | Redis connection string |
+| `OPENWEATHER_API_KEY` |  | [Get free key](https://openweathermap.org/api) |
 | `GOOGLE_MAPS_API_KEY` | ⚠️ | Optional; falls back to mock data |
 | `DEBUG` | ❌ | Set `true` for verbose SQL logs |

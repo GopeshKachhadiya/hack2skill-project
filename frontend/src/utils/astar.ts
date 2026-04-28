@@ -1,10 +1,4 @@
-/**
- * A* Pathfinding Algorithm Implementation
- * Developer 2: Frontend & Route Optimization Engineer
- *
- * Finds the optimal route between two nodes in a shipping graph,
- * considering distance, time, disruption risk, and user preferences.
- */
+
 
 import type { Coordinate, Node, Edge, Route, RouteConstraints } from '../types';
 import { haversineDistance, nodeToCoord } from './geo';

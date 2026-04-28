@@ -37,11 +37,11 @@ export default function AnalyticsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* Model Performance Cards */}
+      {}
       <div>
         <div className="section-header">
           <div>
-            <div className="section-title">🔮 Prophet Model Performance</div>
+            <div className="section-title">Prophet Model Performance</div>
             <div className="section-sub">AI prediction accuracy metrics — Last retrained: {formatDate(perf.lastRetrained)}</div>
           </div>
         </div>
@@ -61,9 +61,9 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Charts */}
+      {}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
-        {/* Accuracy over Time */}
+        {}
         <div className="glass-card" style={{ padding: 20 }}>
           <div className="section-header">
             <div className="section-title">Model Accuracy (30 Days)</div>
@@ -81,7 +81,7 @@ export default function AnalyticsPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* Radar */}
+        {}
         <div className="glass-card" style={{ padding: 20 }}>
           <div className="section-header"><div className="section-title">Model Profile</div></div>
           <ResponsiveContainer width="100%" height={220}>
@@ -94,7 +94,7 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Coverage Stats */}
+      {}
       <div className="metrics-grid">
         {[
           { label: 'Avg Hours to Disruption', value: `${perf.coverage.avgHoursToDisruption.toFixed(1)}h`, color: 'var(--color-accent)', desc: 'Lead time for predictions' },
@@ -110,7 +110,7 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      {/* Location Forecast */}
+      {}
       <div className="glass-card" style={{ padding: 20 }}>
         <div className="section-header">
           <div>
@@ -150,4 +150,3 @@ export default function AnalyticsPage() {
     </div>
   );
 }
-

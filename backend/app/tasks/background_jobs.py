@@ -1,13 +1,4 @@
-"""
-tasks/background_jobs.py — Celery tasks + APScheduler setup.
 
-Registered tasks:
-  • run_data_ingestion        (every 15 min)
-  • run_prediction_cycle      (every 15 min)
-  • run_metrics_evaluation    (daily)
-  • run_model_retraining      (weekly)
-  • run_db_cleanup            (weekly)
-"""
 
 from __future__ import annotations
 
@@ -24,10 +15,9 @@ from loguru import logger
 from app.tasks.celery_app import celery_app
 
 
-# ── Helper to run async functions inside synchronous Celery tasks ─────────────
 
 def _run_async(coro):
-    """Run an async coroutine synchronously (used inside Celery tasks)."""
+    
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
@@ -40,7 +30,6 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-# ── Celery Tasks ──────────────────────────────────────────────────────────────
 
 @celery_app.task(
     bind=True,
@@ -50,10 +39,7 @@ def _run_async(coro):
     acks_late=True,
 )
 def run_data_ingestion(self) -> Dict:
-    """
-    Celery task: Ingest weather, traffic, and port data from all sources.
-    Retries up to 3 times on failure with 60-second delay.
-    """
+    
     from app.services.data_ingestion import ingest_all_data
     try:
         logger.info("⚙️  Starting data ingestion task …")
@@ -73,12 +59,10 @@ def run_data_ingestion(self) -> Dict:
     acks_late=True,
 )
 def run_prediction_cycle(self) -> Dict:
-    """
-    Celery task: Run the Prophet prediction engine for all hub locations.
-    """
+    
     from app.services.prediction_engine import predict_disruptions
     try:
-        logger.info("🔮 Starting prediction cycle …")
+        logger.info(" Starting prediction cycle …")
         results = _run_async(predict_disruptions())
         logger.success(f"Prediction cycle complete: {len(results)} disruptions detected.")
         return {"disruptions_count": len(results), "status": "ok"}
@@ -93,12 +77,10 @@ def run_prediction_cycle(self) -> Dict:
     max_retries=1,
 )
 def run_metrics_evaluation(self) -> Dict:
-    """
-    Celery task: Compute prediction accuracy metrics (runs daily).
-    """
+    
     from app.ml.model_evaluation import build_mock_performance_report
     try:
-        logger.info("📊 Running metrics evaluation …")
+        logger.info(" Running metrics evaluation …")
         metrics = build_mock_performance_report()
         logger.info(f"Metrics: {metrics}")
         return metrics
@@ -114,9 +96,7 @@ def run_metrics_evaluation(self) -> Dict:
     time_limit=3600,   # 1-hour hard limit
 )
 def run_model_retraining(self) -> Dict:
-    """
-    Celery task: Retrain all Prophet models (runs weekly on Sunday 02:00 UTC).
-    """
+    
     from app.ml.prophet_model import retrain_all_prophet_models
     try:
         logger.info("🔄 Starting weekly model retraining …")
@@ -128,16 +108,11 @@ def run_model_retraining(self) -> Dict:
         raise self.retry(exc=exc)
 
 
-# ── APScheduler (in-process fallback when Celery workers not running) ─────────
 
 def _create_scheduler() -> BackgroundScheduler:
-    """
-    Build and configure the APScheduler instance.
-    This is the lightweight alternative to Celery for local dev / Railway free tier.
-    """
+    
     scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Data ingestion every 15 minutes
     scheduler.add_job(
         func=lambda: _run_async(__import__(
             "app.services.data_ingestion", fromlist=["ingest_all_data"]
@@ -149,7 +124,6 @@ def _create_scheduler() -> BackgroundScheduler:
         name="Data Ingestion",
     )
 
-    # Disruption prediction every 15 minutes
     scheduler.add_job(
         func=lambda: _run_async(__import__(
             "app.services.prediction_engine", fromlist=["predict_disruptions"]
@@ -161,7 +135,6 @@ def _create_scheduler() -> BackgroundScheduler:
         name="Disruption Prediction",
     )
 
-    # Model retraining weekly on Sunday 02:00 UTC
     scheduler.add_job(
         func=lambda: __import__(
             "app.ml.prophet_model", fromlist=["retrain_all_prophet_models"]
@@ -172,7 +145,6 @@ def _create_scheduler() -> BackgroundScheduler:
         name="Weekly Model Retraining",
     )
 
-    # Daily metrics evaluation at 01:00 UTC
     scheduler.add_job(
         func=lambda: __import__(
             "app.ml.model_evaluation", fromlist=["build_mock_performance_report"]
@@ -186,5 +158,4 @@ def _create_scheduler() -> BackgroundScheduler:
     return scheduler
 
 
-# Singleton scheduler instance used by main.py startup
 scheduler: BackgroundScheduler = _create_scheduler()

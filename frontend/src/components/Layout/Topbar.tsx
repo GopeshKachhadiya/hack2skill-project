@@ -6,12 +6,12 @@ import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 
 const PAGE_TITLES: Record<string, string> = {
-  '/': '📊 Dashboard',
-  '/map': '🗺️ Live Map',
-  '/optimize': '⚡ Route Optimizer',
-  '/shipments': '📦 Shipments',
-  '/analytics': '📈 Analytics',
-  '/alerts': '🔔 Disruption Alerts',
+  '/': 'Dashboard',
+  '/map': 'Live Map',
+  '/optimize': 'Route Optimizer',
+  '/shipments': 'Shipments',
+  '/analytics': 'Analytics',
+  '/alerts': 'Disruption Alerts',
 
 };
 

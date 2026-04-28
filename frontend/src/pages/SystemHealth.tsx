@@ -16,7 +16,7 @@ export default function SystemHealthPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* Overall Health */}
+      {}
       <div className="glass-card" style={{ padding: 28, display: 'flex', alignItems: 'center', gap: 24 }}>
         <div style={{
           width: 90, height: 90, borderRadius: '50%',
@@ -35,14 +35,14 @@ export default function SystemHealthPage() {
         </div>
         <div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-bright)' }}>System Health</div>
-          <div style={{ color: 'var(--color-success)', fontWeight: 600, marginTop: 4 }}>✅ All critical systems operational</div>
+          <div style={{ color: 'var(--color-success)', fontWeight: 600, marginTop: 4 }}>All critical systems operational</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 4 }}>Last checked: just now</div>
         </div>
       </div>
 
-      {/* Services Grid */}
+      {}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-        {/* Backend API */}
+        {}
         <div className="glass-card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontWeight: 700, color: 'var(--text-bright)' }}>Backend API</span>
@@ -61,7 +61,7 @@ export default function SystemHealthPage() {
           </div>
         </div>
 
-        {/* Database */}
+        {}
         <div className="glass-card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontWeight: 700, color: 'var(--text-bright)' }}>PostgreSQL DB</span>
@@ -80,7 +80,7 @@ export default function SystemHealthPage() {
           </div>
         </div>
 
-        {/* WebSocket */}
+        {}
         <div className="glass-card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontWeight: 700, color: 'var(--text-bright)' }}>WebSocket</span>
@@ -98,7 +98,7 @@ export default function SystemHealthPage() {
         </div>
       </div>
 
-      {/* Data Sources */}
+      {}
       <div className="glass-card" style={{ padding: 20 }}>
         <div className="section-header">
           <div className="section-title">Data Sources</div>
@@ -108,7 +108,7 @@ export default function SystemHealthPage() {
             <div key={key} style={{ padding: 16, background: 'var(--color-bg-elevated)', borderRadius: 10, border: '1px solid var(--color-border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontWeight: 600, textTransform: 'capitalize', color: 'var(--text-bright)' }}>
-                  {key === 'weather' ? '🌤️' : key === 'traffic' ? '🚗' : '⚓'} {key}
+                  {key}
                 </span>
                 <StatusIcon status={src.status} />
               </div>
@@ -123,7 +123,7 @@ export default function SystemHealthPage() {
         </div>
       </div>
 
-      {/* Metrics Summary */}
+      {}
       <div className="metrics-grid">
         {[
           { label: 'API Success Rate', value: '99.2%', color: 'var(--color-success)' },
@@ -140,4 +140,3 @@ export default function SystemHealthPage() {
     </div>
   );
 }
-

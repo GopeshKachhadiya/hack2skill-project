@@ -5,13 +5,13 @@
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ```bash
 cd frontend
 npm install
 npm run dev
-# → http://localhost:5173
+#  http://localhost:5173
 ```
 
 ---
@@ -53,29 +53,29 @@ frontend/
 
 ---
 
-## ✅ Developer 2 Deliverables
+##  Developer 2 Deliverables
 
 | Feature | Status |
 |---------|--------|
-| React 18 + Vite + TypeScript | ✅ |
-| Dark mode glassmorphism UI | ✅ |
-| Leaflet interactive map (75+ shipments) | ✅ |
-| Color-coded shipment markers | ✅ |
-| Disruption zones with tooltips | ✅ |
-| A* pathfinding algorithm | ✅ |
-| Graph class with shipping network | ✅ |
-| Route optimization with priority modes | ✅ |
-| Cost-benefit comparison view | ✅ |
-| React Query data fetching | ✅ |
-| Mock data fallback (offline dev) | ✅ |
-| WebSocket hook with auto-reconnect | ✅ |
-| Prophet forecast charts (Recharts) | ✅ |
-| Model performance analytics | ✅ |
-| Disruption alert feed | ✅ |
+| React 18 + Vite + TypeScript |  |
+| Dark mode glassmorphism UI |  |
+| Leaflet interactive map (75+ shipments) |  |
+| Color-coded shipment markers |  |
+| Disruption zones with tooltips |  |
+| A* pathfinding algorithm |  |
+| Graph class with shipping network |  |
+| Route optimization with priority modes |  |
+| Cost-benefit comparison view |  |
+| React Query data fetching |  |
+| Mock data fallback (offline dev) |  |
+| WebSocket hook with auto-reconnect |  |
+| Prophet forecast charts (Recharts) |  |
+| Model performance analytics |  |
+| Disruption alert feed |  |
 
-| Shipments table with sort/filter | ✅ |
-| Responsive design | ✅ |
-| TypeScript strict mode | ✅ |
+| Shipments table with sort/filter |  |
+| Responsive design |  |
+| TypeScript strict mode |  |
 
 ---
 
@@ -88,7 +88,7 @@ VITE_WS_URL=ws://localhost:8000          # WebSocket URL
 
 ---
 
-## 🗺️ A* Algorithm
+##  A* Algorithm
 
 The routing engine at `src/utils/astar.ts` implements:
 - **MinHeap** priority queue for O(log n) operations
@@ -137,7 +137,7 @@ All APIs have **automatic mock data fallback** for offline development.
 
 ---
 
-## 📊 Key Pages
+##  Key Pages
 
 ### Dashboard
 - 4 KPI metric cards (shipments, on-time rate, delays, disruptions)

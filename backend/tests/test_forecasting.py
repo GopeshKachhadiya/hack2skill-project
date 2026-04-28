@@ -1,12 +1,4 @@
-"""
-tests/test_forecasting.py — Unit tests for the Prophet pipeline.
 
-Tests:
-  • Feature engineering output shape
-  • Synthetic training data generation
-  • Prophet model train + predict round-trip
-  • Model evaluation metrics
-"""
 
 import numpy as np
 import pandas as pd
@@ -20,10 +12,9 @@ from app.ml.feature_engineering import (
 from app.ml.model_evaluation import evaluate_forecast_accuracy, build_mock_performance_report
 
 
-# ── Feature Engineering ───────────────────────────────────────────────────────
 
 def _make_raw_df(n_hours: int = 200) -> pd.DataFrame:
-    """Helper: create a minimal raw DataFrame for testing."""
+    
     dates = pd.date_range(end=datetime.utcnow(), periods=n_hours, freq="h")
     rng = np.random.default_rng(0)
     return pd.DataFrame({
@@ -75,7 +66,6 @@ def test_generate_future_dataframe_columns():
     assert "traffic_index" in future.columns
 
 
-# ── Model Evaluation ──────────────────────────────────────────────────────────
 
 def test_evaluate_empty_inputs():
     metrics = evaluate_forecast_accuracy(
@@ -109,11 +99,10 @@ def test_mock_performance_report_structure():
     assert 0 <= report["model_accuracy"]["precision"] <= 1
 
 
-# ── Prophet Train + Predict (integration, slow) ───────────────────────────────
 
 @pytest.mark.slow
 def test_prophet_train_and_predict():
-    """Full Prophet round-trip test — skipped in fast test mode."""
+    
     from app.ml.prophet_model import train_prophet_model, predict_with_prophet, _make_synthetic_training_data
     data = _make_synthetic_training_data("disruption_likelihood", "test_location", n_hours=500)
     model = train_prophet_model(data, "disruption_likelihood", "test_location")

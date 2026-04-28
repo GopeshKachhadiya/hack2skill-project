@@ -20,16 +20,15 @@ export default function Sidebar() {
 
   return (
     <nav className="sidebar">
-      {/* Logo */}
+      {}
       <div className="sidebar-logo">
-        <div className="sidebar-logo-icon">🚀</div>
         <div>
           <div className="sidebar-logo-text">Anvayaa</div>
           <div className="sidebar-logo-sub">Supply Chain Platform</div>
         </div>
       </div>
 
-      {/* Nav */}
+      {}
       <div style={{ flex: 1, padding: '12px 0' }}>
         <div className="sidebar-section-title">Navigation</div>
         {navItems.map((item) => (
@@ -48,14 +47,13 @@ export default function Sidebar() {
         ))}
       </div>
 
-      {/* Footer */}
+      {}
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--color-border)' }}>
         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          <div style={{ marginBottom: 2 }}>⚡ A* Route Optimization</div>
-          <div>🔮 Prophet 48-72h Forecasts</div>
+          <div style={{ marginBottom: 2 }}>A* Route Optimization</div>
+          <div>Prophet 48-72h Forecasts</div>
         </div>
       </div>
     </nav>
   );
 }
-

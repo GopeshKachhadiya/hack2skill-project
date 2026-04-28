@@ -1,7 +1,3 @@
-// ============================================================
-// TypeScript Types & Interfaces for Supply Chain Platform
-// Developer 2: Frontend & Route Optimization Engineer
-// ============================================================
 
 export interface Coordinate {
   lat: number;

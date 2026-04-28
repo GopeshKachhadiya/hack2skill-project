@@ -1,7 +1,6 @@
 import sys
 import os
 
-# Add current dir to path to import app
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.config import get_settings

@@ -1,10 +1,4 @@
-"""
-tests/test_api.py — Integration tests for all REST endpoints.
 
-Run with:
-  cd backend
-  pytest tests/test_api.py -v
-"""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +9,6 @@ from app.api import routes as api_routes
 client = TestClient(app)
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
 
 def test_health_check():
     resp = client.get("/api/v1/health")
@@ -32,7 +25,6 @@ def test_root_redirect():
     assert "docs" in resp.json()
 
 
-# ── Disruptions ───────────────────────────────────────────────────────────────
 
 def test_get_disruptions_returns_list():
     resp = client.get("/api/v1/disruptions")
@@ -190,7 +182,6 @@ def test_assistant_chat_returns_retry_seconds_on_rate_limit(monkeypatch):
     assert "42 seconds" in data["reply"]
 
 
-# ── Shipment Analysis ─────────────────────────────────────────────────────────
 
 def test_analyze_shipment_basic():
     payload = {
@@ -218,12 +209,11 @@ def test_analyze_shipment_risk_score_range():
 
 
 def test_analyze_shipment_missing_fields():
-    """Should succeed with minimal fields (origin + destination required)."""
+    
     resp = client.post("/api/v1/shipments/analyze", json={"origin": "Hamburg"})
     assert resp.status_code == 422  # validation error — destination missing
 
 
-# ── Forecasting ───────────────────────────────────────────────────────────────
 
 def test_get_forecast_returns_data():
     resp = client.get("/api/v1/forecasts/Shanghai")
@@ -252,7 +242,6 @@ def test_get_forecast_data_structure():
         assert 0.0 <= p["disruption_likelihood"] <= 1.0
 
 
-# ── Model Performance ─────────────────────────────────────────────────────────
 
 def test_stats_performance():
     resp = client.get("/api/v1/stats/performance")
@@ -263,7 +252,6 @@ def test_stats_performance():
     assert "recall" in data["model_accuracy"]
 
 
-# ── Route Optimization ────────────────────────────────────────────────────────
 
 def test_optimize_route():
     payload = {
@@ -286,7 +274,6 @@ def test_optimize_route_empty_waypoints():
     assert resp.status_code == 400
 
 
-# ── Manual Ingestion Trigger ──────────────────────────────────────────────────
 
 def test_ingest_trigger():
     resp = client.post("/api/v1/ingest/trigger")

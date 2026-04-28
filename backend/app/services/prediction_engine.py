@@ -1,9 +1,4 @@
-"""
-services/prediction_engine.py — Orchestration layer.
 
-Ties together data ingestion + Prophet forecasts → DisruptionPrediction records.
-Runs every 15 minutes via APScheduler.
-"""
 
 from __future__ import annotations
 
@@ -15,7 +10,6 @@ from loguru import logger
 
 from app.cache import cache_get, cache_set
 from app.config import get_settings
-# from app.database import SessionLocal  # No longer needed
 from app.models.disruption import DisruptionPrediction
 from app.models.shipment import Shipment
 
@@ -70,14 +64,7 @@ def _build_recommendation(disruption_type: str, severity: str) -> str:
 
 
 async def predict_disruptions(locations: Optional[List[str]] = None) -> List[Dict]:
-    """
-    Main prediction loop — called every 15 minutes by the scheduler.
-
-    1. Load Prophet forecasts from cache / DB
-    2. Identify high-probability windows (> 70%)
-    3. Persist DisruptionPrediction records
-    4. Return list of active disruptions
-    """
+    
     from app.services.forecasting import generate_location_forecast, DEFAULT_LOCATIONS
 
     if locations is None:
@@ -94,7 +81,6 @@ async def predict_disruptions(locations: Optional[List[str]] = None) -> List[Dic
                 prob = point.get("disruption_likelihood", 0.0)
                 weather_sev = point.get("weather_severity", 0.0)
                 
-                # Directly boost probability using real-time marine weather severity
                 if weather_sev >= 0.4:
                     prob = max(prob, weather_sev)
                 
@@ -106,7 +92,6 @@ async def predict_disruptions(locations: Optional[List[str]] = None) -> List[Dic
                     continue  # below alert threshold
 
                 for dtype in DISRUPTION_TYPES:
-                    # Apply type-specific probability adjustment
                     type_prob = _adjust_probability_by_type(dtype, prob, forecast)
                     if type_prob < settings.HIGH_RISK_THRESHOLD:
                         continue
@@ -139,10 +124,8 @@ async def predict_disruptions(locations: Optional[List[str]] = None) -> List[Dic
         except Exception as exc:
             logger.error(f"Prediction failed for {location}: {exc}")
 
-    # ── Persist to DB ─────────────────────────────────────────────────────────
     await _persist_predictions(active_disruptions)
 
-    # ── Update cache ──────────────────────────────────────────────────────────
     cache_set("active_disruptions", active_disruptions, ttl=900)
 
     logger.info(
@@ -157,7 +140,7 @@ def _adjust_probability_by_type(
     base_prob: float,
     forecast: Dict,
 ) -> float:
-    """Apply a type-specific multiplier based on current conditions."""
+    
     conditions = forecast.get("current_conditions", {})
     weather_sev = conditions.get("weather_severity", 0.2)
     traffic_idx = conditions.get("traffic_index", 0.3)
@@ -173,7 +156,7 @@ def _adjust_probability_by_type(
 
 
 async def _persist_predictions(disruptions: List[Dict]) -> None:
-    """Bulk-insert active disruption predictions into MongoDB."""
+    
     if not disruptions:
         return
     try:
@@ -204,5 +187,5 @@ async def _persist_predictions(disruptions: List[Dict]) -> None:
 
 
 def get_active_disruptions_from_cache() -> List[Dict]:
-    """Quick read of active disruptions from Redis (used by API routes)."""
+    
     return cache_get("active_disruptions") or []

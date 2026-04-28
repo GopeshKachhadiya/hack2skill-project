@@ -1,11 +1,4 @@
-"""
-ml/model_evaluation.py — Accuracy metrics for Prophet predictions.
 
-Computes:
-  • MAPE  – Mean Absolute Percentage Error
-  • Precision, Recall, F1  – classification metrics
-  • Coverage  – average advance warning hours
-"""
 
 from __future__ import annotations
 
@@ -17,7 +10,7 @@ from loguru import logger
 
 
 def _safe_mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """MAPE ignoring zero-true values to avoid division by zero."""
+    
     mask = y_true != 0
     if not mask.any():
         return 0.0
@@ -29,22 +22,7 @@ def evaluate_forecast_accuracy(
     predictions: pd.DataFrame,
     threshold: float = 0.5,
 ) -> Dict:
-    """
-    Compare Prophet predictions to actual disruption flags.
-
-    Parameters
-    ----------
-    actuals : pd.DataFrame
-        Columns: ``timestamp`` (datetime), ``disruption_flag`` (0/1).
-    predictions : pd.DataFrame
-        Columns: ``timestamp`` (datetime), ``forecast_value`` (0-1).
-    threshold : float
-        Probability cutoff for classifying as disruption.
-
-    Returns
-    -------
-    dict with precision, recall, f1, mape, coverage keys.
-    """
+    
     if actuals.empty or predictions.empty:
         logger.warning("evaluate_forecast_accuracy: empty inputs received.")
         return {
@@ -54,7 +32,6 @@ def evaluate_forecast_accuracy(
             "false_positives": 0, "false_negatives": 0,
         }
 
-    # Merge on nearest timestamp
     actuals["timestamp"] = pd.to_datetime(actuals["timestamp"])
     predictions["timestamp"] = pd.to_datetime(predictions["timestamp"])
     merged = pd.merge_asof(
@@ -81,7 +58,6 @@ def evaluate_forecast_accuracy(
     )
     mape = _safe_mape(y_true, y_pred_raw)
 
-    # Average hours of advance warning (positive predictions before actual)
     advance_hours = 0.0
     if tp > 0:
         advance_hours = 36.0  # placeholder — real calculation needs event timeline
@@ -102,10 +78,7 @@ def evaluate_forecast_accuracy(
 
 
 def build_mock_performance_report() -> Dict:
-    """
-    Return a mock performance report used when no real data is available yet.
-    Useful for hackathon demos before real evaluation data accumulates.
-    """
+    
     return {
         "model_accuracy": {
             "precision": 0.82,

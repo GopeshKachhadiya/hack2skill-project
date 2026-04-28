@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/refs, react-hooks/set-state-in-effect */
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { WS_URL } from '../utils/constants';
 
@@ -47,4 +47,3 @@ export function useWebSocket(path: string, options: UseWebSocketOptions = {}) {
 
   return { status, send, lastMessage };
 }
-

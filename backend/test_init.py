@@ -2,7 +2,6 @@ import asyncio
 import os
 import sys
 
-# Setup app path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.database import init_db

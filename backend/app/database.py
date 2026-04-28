@@ -1,6 +1,4 @@
-"""
-database.py - Beanie/Mongo initialization with a safe local fallback.
-"""
+
 
 from __future__ import annotations
 
@@ -33,12 +31,12 @@ class _FallbackSession:
 
 
 def SessionLocal() -> _FallbackSession:
-    """Compatibility shim for routes that still expect a SQLAlchemy-style session."""
+    
     return _FallbackSession()
 
 
 async def init_db() -> None:
-    """Initialize Beanie if Mongo is available; otherwise keep the app running in fallback mode."""
+    
     mongo_url = getattr(settings, "MONGODB_URL", "") or getattr(settings, "DATABASE_URL", "")
     mongo_db_name = getattr(settings, "MONGODB_DB_NAME", "anvayaa_supply_chain")
 
@@ -67,5 +65,5 @@ async def init_db() -> None:
 
 
 def get_db() -> _FallbackSession:
-    """Dependency shim kept for compatibility with older route code."""
+    
     return SessionLocal()

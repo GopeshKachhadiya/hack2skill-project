@@ -1,18 +1,9 @@
-"""
-tests/test_data_ingestion.py — Unit tests for the data ingestion service.
 
-Tests:
-  • Mock weather API response parsing
-  • Severity classification
-  • Mock data fallback
-  • Cache utilities
-"""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-# ── Weather ───────────────────────────────────────────────────────────────────
 
 def test_classify_weather_severity_critical():
     from app.services.data_ingestion import _classify_weather_severity
@@ -61,11 +52,10 @@ def test_mock_port_data_structure():
         assert 0.0 <= p["congestion_index"] <= 1.0
 
 
-# ── Cache ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_fetch_weather_returns_dict_on_api_failure():
-    """Should return mock data (not crash) when API is unreachable."""
+    
     from app.services.data_ingestion import fetch_weather_data
     with patch("app.services.data_ingestion._http_get_with_retry", return_value=None):
         with patch("app.services.data_ingestion.cache_get", return_value=None):
@@ -76,7 +66,7 @@ async def test_fetch_weather_returns_dict_on_api_failure():
 
 @pytest.mark.asyncio
 async def test_fetch_weather_uses_cache():
-    """Cache hit should return immediately without calling the API."""
+    
     from app.services.data_ingestion import fetch_weather_data
     mock_cached = {"location": "Shanghai", "temperature": 22.0, "severity": "low"}
     with patch("app.services.data_ingestion.cache_get", return_value=mock_cached):
@@ -86,7 +76,7 @@ async def test_fetch_weather_uses_cache():
 
 @pytest.mark.asyncio
 async def test_ingest_all_data_returns_report():
-    """ingest_all_data should always return a report dict."""
+    
     from app.services.data_ingestion import ingest_all_data
     with patch("app.services.data_ingestion.fetch_weather_data", return_value={"location": "X"}):
         with patch("app.services.data_ingestion.fetch_traffic_data", return_value={"traffic_index": 0.3}):
