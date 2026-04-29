@@ -481,6 +481,15 @@ async def _build_structured_assistant_reply(
     latest_user_message: str,
     context: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> str | None:
+    import math
+    from app.api.chat_analytics import (
+        highest_late_risk, pct_at_risk, cargo_value_at_risk,
+        most_delay_origin, avg_delay, cargo_type_disruption_rate,
+        suez_impact, safest_route, suez_vs_cape, routing_mode_comparison,
+        likely_escalation, compounded_risk, delay_decision,
+        above_avg_weather_ports, compare_reroute_priority,
+        total_critical_value, prediction_accuracy_context,
+    )
     normalized = " ".join(latest_user_message.lower().split())
     shipments = await _resolve_assistant_shipments(context)
     disruptions = await _resolve_assistant_disruptions(context)
@@ -490,6 +499,15 @@ async def _build_structured_assistant_reply(
             "Hi! I can help with this Anvayaa supply-chain project. Ask me about shipments, route optimization, "
             "sea-only routing, disruptions, alerts, forecasts, or a shipment ID like **SHP-1015**."
         )
+
+    # ── multi-shipment compare — must run BEFORE single-ID lookup ──────────────
+    ids_in_msg_early = re.findall(r"\bSHP-\d{4,}\b", latest_user_message.upper())
+    if len(ids_in_msg_early) >= 2 and any(kw in normalized for kw in ["reroute", "first", "priority", "compare", "which", "urgency", "based on"]):
+        from app.api.chat_analytics import compare_reroute_priority
+        s1 = next((s for s in shipments if s["id"].upper() == ids_in_msg_early[0]), None)
+        s2 = next((s for s in shipments if s["id"].upper() == ids_in_msg_early[1]), None)
+        if s1 and s2:
+            return compare_reroute_priority(s1, s2)
 
     shipment_id = _extract_shipment_id(latest_user_message)
     if shipment_id:
@@ -522,6 +540,11 @@ async def _build_structured_assistant_reply(
             )
         return "\n".join(lines)
 
+    # Suez escalation must run before generic 'how many shipments' catch
+    if "suez" in normalized and ("escalat" in normalized or "affect" in normalized or ("how many" in normalized) or "impact" in normalized):
+        from app.api.chat_analytics import suez_impact
+        return suez_impact(shipments, disruptions)
+
     if "shipment" in normalized and ("how many" in normalized or "count" in normalized):
         return f"There are currently **{len(shipments)} shipments** in the dataset used by this app."
 
@@ -536,7 +559,15 @@ async def _build_structured_assistant_reply(
             )
         return "\n".join(lines)
 
-    if ("mumbai" in normalized and "rotterdam" in normalized) or ("optimize" in normalized and "route" in normalized):
+    # Safest-route questions must run before generic Mumbai→Rotterdam handler
+    if "safest" in normalized and "route" in normalized:
+        from app.api.chat_analytics import safest_route
+        port_matches = re.findall(r"(mumbai|shanghai|rotterdam|hamburg|dubai|singapore|colombo|los angeles|busan|antwerp)", normalized)
+        o = port_matches[0].title() if len(port_matches) > 0 else "Origin"
+        d = port_matches[1].title() if len(port_matches) > 1 else "Destination"
+        return safest_route(o, d, disruptions)
+
+    if ("mumbai" in normalized and "rotterdam" in normalized and "optimize" not in normalized and "safest" not in normalized) or ("optimize" in normalized and "route" in normalized):
         return "\n".join([
             "To optimize a route (e.g., from **Mumbai** to **Rotterdam**), please use the **Route Optimization** page on the sidebar.",
             "* **Step 1:** Select **Mumbai** as your Origin Port.",
@@ -564,6 +595,94 @@ async def _build_structured_assistant_reply(
                 f"(severity {round(float(disruption.get('predicted_severity', 0.0)), 2)})"
             )
         return "\n".join(lines)
+
+    # ── Total disruptions count ──────────────────────────────────────────────
+    if ("total disruption" in normalized or "number of disruption" in normalized
+            or ("how many" in normalized and "disruption" in normalized)):
+        return (
+            f"There are currently **{len(disruptions)} active disruptions** tracked across all monitored locations "
+            f"in the Anvayaa platform. Use the **Disruptions** page to see all details on the map."
+        )
+
+    # ── Model precision / recall / accuracy metrics ──────────────────────────
+    if any(kw in normalized for kw in ["precision", "recall", "f1", "f1 score", "model accuracy", "model performance", "accuracy"]):
+        report = build_mock_performance_report()
+        acc = report["model_accuracy"]
+        cov = report["coverage"]
+        return "\n".join([
+            "Here are the current **Prophet ML Model Performance** metrics:",
+            f"* **Precision:** {round(acc['precision'] * 100, 1)}%",
+            f"* **Recall:** {round(acc['recall'] * 100, 1)}%",
+            f"* **F1 Score:** {round(acc['f1_score'] * 100, 1)}%",
+            f"* **MAPE:** {acc['mape']}%",
+            f"* **Total Disruptions Predicted:** {cov['total_disruptions_predicted']:,}",
+            f"* **Correct Predictions:** {cov['correct_predictions']:,}",
+            f"* **Avg Hours to Disruption:** {cov['avg_hours_to_disruption']}h",
+        ])
+
+    # ── Avg hours to disruption ──────────────────────────────────────────────
+    if "avg hour" in normalized or "average hour" in normalized or "hours to disruption" in normalized:
+        report = build_mock_performance_report()
+        cov = report["coverage"]
+        return (
+            f"The platform currently predicts disruptions on average **{cov['avg_hours_to_disruption']} hours** "
+            f"before they occur, providing actionable lead time to reroute or intervene."
+        )
+
+    # ── Port weather ─────────────────────────────────────────────────────────
+    port_weather_match = re.search(r"weather.*?(?:of|at|for|in)?\s+port\s+of\s+([\w\s]+)", normalized)
+    if not port_weather_match:
+        port_weather_match = re.search(r"(?:of|at|for|in)?\s*port\s+of\s+([\w\s]+?)\s*(?:weather|condition|status)?", normalized)
+    if port_weather_match and ("weather" in normalized or "condition" in normalized or "forecast" in normalized):
+        loc_name = port_weather_match.group(1).strip().title()
+        matched = next(
+            (d for d in disruptions if loc_name.lower() in d["location"].lower()), None
+        )
+        if matched:
+            return (
+                f"Current conditions at **Port of {loc_name}**: "
+                f"**{matched['disruption_type'].replace('_', ' ').title()}** event detected, "
+                f"severity **{round(float(matched.get('predicted_severity', 0.0)), 2)}**, "
+                f"probability **{round(float(matched.get('probability', 0.0)) * 100, 0):.0f}%**. "
+                f"\n\nAction recommended: {matched.get('recommended_action', 'Monitor closely.')}"
+            )
+        return (
+            f"No active weather events currently flagged for **Port of {loc_name}**. "
+            f"Conditions appear nominal. Check the **Live Map** for real-time disruption overlays."
+        )
+
+    # ── Port-to-port route / distance details ────────────────────────────────
+    port_pair = re.findall(r"port\s+of\s+([\w\s]+?)(?:\s+to\s+|\s+and\s+)port\s+of\s+([\w\s]+)", normalized)
+    if not port_pair:
+        port_pair = re.findall(r"(?:between\s+)?port\s+of\s+([\w\s]+?)\s+(?:to|and|-)\s+port\s+of\s+([\w\s]+)", normalized)
+    if port_pair:
+        origin_name, dest_name = port_pair[0][0].strip().title(), port_pair[0][1].strip().title()
+        origin_key = next((k for k in PORT_COORDS if origin_name.lower() in k.lower()), None)
+        dest_key = next((k for k in PORT_COORDS if dest_name.lower() in k.lower()), None)
+        if origin_key and dest_key:
+            o = PORT_COORDS[origin_key]
+            d = PORT_COORDS[dest_key]
+            import math
+            R = 6371
+            lat1, lon1 = math.radians(o["lat"]), math.radians(o["lng"])
+            lat2, lon2 = math.radians(d["lat"]), math.radians(d["lng"])
+            dlat, dlon = lat2 - lat1, lon2 - lon1
+            a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
+            dist_km = round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
+            dist_nm = round(dist_km * 0.539957)
+            transit_days = round(dist_km / (750 * 24), 1)  # ~750 km/day average vessel speed
+            return "\n".join([
+                f"**Route: Port of {origin_name} → Port of {dest_name}**",
+                f"* **Great-Circle Distance:** {dist_km:,} km ({dist_nm:,} nautical miles)",
+                f"* **Estimated Transit Time:** ~{transit_days} days (at standard cargo vessel speed)",
+                f"* **Origin Coordinates:** {o['lat']}°, {o['lng']}°",
+                f"* **Destination Coordinates:** {d['lat']}°, {d['lng']}°",
+                f"\nUse the **Route Optimization** page for a live disruption-aware route analysis between these ports.",
+            ])
+        return (
+            f"I found a route query for **Port of {origin_name}** to **Port of {dest_name}**, but one or both ports "
+            f"are not in the platform's port graph. Use the **Route Optimization** page to try with the available port list."
+        )
 
     if "weather disruption" in normalized or "weather disruptions" in normalized:
         weather_disruptions = [
@@ -607,6 +726,31 @@ async def _build_structured_assistant_reply(
 
     if normalized.startswith("tell me about ") or normalized.startswith("what about "):
         query = normalized.replace("tell me about ", "", 1).replace("what about ", "", 1).strip()
+        # Check if query matches a platform metric
+        metrics_keywords = {
+            "avg hours to disruption": "avg_hours_to_disruption",
+            "average hours to disruption": "avg_hours_to_disruption",
+            "total disruptions": "total_disruptions_predicted",
+            "precision": "precision",
+            "recall": "recall",
+            "f1": "f1_score",
+        }
+        for kw, metric_key in metrics_keywords.items():
+            if kw in query:
+                report = build_mock_performance_report()
+                if metric_key == "avg_hours_to_disruption":
+                    val = report["coverage"]["avg_hours_to_disruption"]
+                    return f"The **Average Hours to Disruption** metric is currently **{val} hours**. This measures how far in advance the Prophet ML model predicts disruption events."
+                if metric_key == "total_disruptions_predicted":
+                    val = report["coverage"]["total_disruptions_predicted"]
+                    return f"The platform has predicted a total of **{val:,} disruptions** to date, with **{report['coverage']['correct_predictions']:,}** correct predictions."
+                if metric_key in ["precision", "recall", "f1_score"]:
+                    acc = report["model_accuracy"]
+                    return (
+                        f"Current model **{metric_key.replace('_', ' ').title()}**: "
+                        f"**{round(acc.get(metric_key, acc.get('f1_score', 0)) * 100, 1)}%**. "
+                        f"Precision: {round(acc['precision']*100,1)}%, Recall: {round(acc['recall']*100,1)}%, F1: {round(acc['f1_score']*100,1)}%."
+                    )
         matched_disruptions = [
             disruption
             for disruption in disruptions
@@ -629,6 +773,111 @@ async def _build_structured_assistant_reply(
                     f"status {disruption.get('status', 'active')})"
                 )
             return "\n".join(lines)
+
+    # ── ANALYTICS: highest late risk ──────────────────────────────────────────
+    if any(p in normalized for p in ["highest risk", "not arriving on time", "most at risk shipment", "worst shipment", "riskiest shipment"]):
+        return highest_late_risk(shipments)
+
+    # ── ANALYTICS: % at risk ──────────────────────────────────────────────────
+    if ("percentage" in normalized or "percent" in normalized or "how many" in normalized) and "at risk" in normalized:
+        return pct_at_risk(shipments)
+    if "what percentage" in normalized and "shipment" in normalized:
+        return pct_at_risk(shipments)
+
+    # ── ANALYTICS: cargo value at risk ────────────────────────────────────────
+    if ("cargo value" in normalized or "cargo worth" in normalized or "value" in normalized) and "at risk" in normalized:
+        return cargo_value_at_risk(shipments)
+    if "how much" in normalized and ("cargo" in normalized or "value" in normalized) and ("risk" in normalized or "disruption" in normalized):
+        return cargo_value_at_risk(shipments)
+
+    # ── ANALYTICS: worst origin port ─────────────────────────────────────────
+    if ("origin port" in normalized or "which port" in normalized) and ("delay" in normalized or "causing" in normalized or "most" in normalized):
+        return most_delay_origin(shipments)
+    if "which" in normalized and "origin" in normalized and "delay" in normalized:
+        return most_delay_origin(shipments)
+
+    # ── ANALYTICS: average delay ─────────────────────────────────────────────
+    if ("average delay" in normalized or "avg delay" in normalized or "mean delay" in normalized) and "shipment" in normalized:
+        return avg_delay(shipments)
+
+    # ── ANALYTICS: cargo type disruption rate ────────────────────────────────
+    if "cargo type" in normalized and ("disruption" in normalized or "rate" in normalized or "highest" in normalized or "most" in normalized):
+        return cargo_type_disruption_rate(shipments)
+    if "which cargo" in normalized and ("disruption" in normalized or "risk" in normalized):
+        return cargo_type_disruption_rate(shipments)
+
+    # ── ANALYTICS: Suez escalation impact ────────────────────────────────────
+    if "suez" in normalized and ("escalat" in normalized or "affect" in normalized or "how many" in normalized or "impact" in normalized):
+        return suez_impact(shipments, disruptions)
+
+    # ── ANALYTICS: Suez vs Cape of Good Hope ─────────────────────────────────
+    if ("suez" in normalized and "cape" in normalized) or ("cape of good hope" in normalized) or ("faster" in normalized and "suez" in normalized):
+        return suez_vs_cape(disruptions)
+
+    # ── ANALYTICS: Sea+Land vs Sea-Only comparison ────────────────────────────
+    if ("sea" in normalized and "land" in normalized and ("risk" in normalized or "difference" in normalized or "compare" in normalized or "vs" in normalized)):
+        origin_kw = "Dubai" if "dubai" in normalized else ("Mumbai" if "mumbai" in normalized else "Origin Port")
+        dest_kw = "Hamburg" if "hamburg" in normalized else ("Rotterdam" if "rotterdam" in normalized else "Destination Port")
+        return routing_mode_comparison(origin_kw, dest_kw, disruptions)
+    if "sea only" in normalized and ("risk" in normalized or "compare" in normalized or "difference" in normalized):
+        return routing_mode_comparison("Origin", "Destination", disruptions)
+
+    # ── ANALYTICS: which disruption will escalate ─────────────────────────────
+    if ("escalat" in normalized or "escalate" in normalized) and ("disruption" in normalized or "next 24" in normalized or "forecast" in normalized):
+        return likely_escalation(disruptions)
+    if "most likely" in normalized and ("escalat" in normalized or "worsen" in normalized or "grow" in normalized):
+        return likely_escalation(disruptions)
+
+    # ── ANALYTICS: compounded risk of multiple disruptions ────────────────────
+    if "compounded risk" in normalized or ("both" in normalized and "disruption" in normalized and ("active" in normalized or "risk" in normalized)):
+        loc_matches = re.findall(r"(?:bay of biscay|rotterdam|suez|shanghai|mumbai|hamburg|singapore|dubai|colombo|gibraltar)", normalized)
+        loc_a = loc_matches[0].title() if len(loc_matches) > 0 else "Bay of Biscay"
+        loc_b = loc_matches[1].title() if len(loc_matches) > 1 else "Rotterdam"
+        return compounded_risk(loc_a, loc_b, disruptions)
+
+    # ── ANALYTICS: delay decision ─────────────────────────────────────────────
+    if "should i delay" in normalized or ("delay" in normalized and "shipment" in normalized and ("should" in normalized or "48" in normalized or "24" in normalized)):
+        hours_match = re.search(r"(\d+)\s*hours?", normalized)
+        hours = int(hours_match.group(1)) if hours_match else 48
+        port_matches = re.findall(r"(?:from|between)?\s*(singapore|mumbai|shanghai|rotterdam|hamburg|dubai|colombo|los angeles|busan)", normalized)
+        origin_kw = port_matches[0].title() if len(port_matches) > 0 else "Singapore"
+        dest_kw = port_matches[1].title() if len(port_matches) > 1 else "Hamburg"
+        return delay_decision(origin_kw, dest_kw, hours, disruptions)
+
+    # ── ANALYTICS: above-average weather ports ────────────────────────────────
+    if ("above" in normalized and "average" in normalized and ("weather" in normalized or "severity" in normalized or "port" in normalized)):
+        return above_avg_weather_ports(disruptions)
+    if "which port" in normalized and ("weather" in normalized or "severe" in normalized or "worst" in normalized):
+        return above_avg_weather_ports(disruptions)
+
+    # ── ANALYTICS: compare two shipments for rerouting ────────────────────────
+    ids_in_msg = re.findall(r"\bSHP-\d{4,}\b", latest_user_message.upper())
+    if len(ids_in_msg) >= 2 and any(kw in normalized for kw in ["reroute", "first", "priority", "compare", "which", "urgency"]):
+        s1 = next((s for s in shipments if s["id"].upper() == ids_in_msg[0]), None)
+        s2 = next((s for s in shipments if s["id"].upper() == ids_in_msg[1]), None)
+        if s1 and s2:
+            return compare_reroute_priority(s1, s2)
+
+    # ── ANALYTICS: total value of critical shipments ──────────────────────────
+    if ("total value" in normalized or "total cargo" in normalized) and "critical" in normalized:
+        return total_critical_value(shipments)
+    if ("value" in normalized and "critical shipment" in normalized):
+        return total_critical_value(shipments)
+
+    # ── ANALYTICS: prediction accuracy in business terms ─────────────────────
+    if ("f1" in normalized and "good enough" in normalized) or ("trust" in normalized and "prediction" in normalized) or ("roi" in normalized and "platform" in normalized):
+        return prediction_accuracy_context()
+    if "false alert" in normalized or "false positive" in normalized:
+        return prediction_accuracy_context()
+    if "how accurate" in normalized or "accuracy" in normalized and "model" in normalized:
+        return prediction_accuracy_context()
+
+    # ── ANALYTICS: safest route (generic) ────────────────────────────────────
+    if "safest route" in normalized or ("safest" in normalized and "route" in normalized):
+        port_matches = re.findall(r"(mumbai|shanghai|rotterdam|hamburg|dubai|singapore|colombo|los angeles|busan|antwerp)", normalized)
+        o = port_matches[0].title() if len(port_matches) > 0 else "Origin"
+        d = port_matches[1].title() if len(port_matches) > 1 else "Destination"
+        return safest_route(o, d, disruptions)
 
     return None
 
@@ -682,7 +931,46 @@ async def _generate_gemini_project_reply(
     except Exception as e:
         logger.error(f"Assistant shipment context failed: {e}")
 
-    dynamic_prompt = f
+    report = build_mock_performance_report()
+    acc = report["model_accuracy"]
+    cov = report["coverage"]
+    dynamic_prompt = (
+        "You are Anvayaa, an expert AI assistant embedded inside the Anvayaa Supply Chain Resilience platform. "
+        "You have live access to the platform's data and can answer any question about it. "
+        "ALWAYS respond in a helpful, factual, and concise manner. "
+        "NEVER say you cannot answer a question that can be derived from the data below. "
+        "Use bullet points and bold text for clarity.\n\n"
+        "=== PLATFORM LIVE DATA ===\n"
+        f"ACTIVE DISRUPTIONS ({len(disruptions_info)} total):\n{disruption_text}\n\n"
+        f"RECENT SHIPMENTS (sample of up to 10):\n{shipment_text}\n\n"
+        "=== PLATFORM PERFORMANCE METRICS ===\n"
+        f"- Model Precision: {round(acc['precision']*100,1)}%\n"
+        f"- Model Recall: {round(acc['recall']*100,1)}%\n"
+        f"- F1 Score: {round(acc['f1_score']*100,1)}%\n"
+        f"- MAPE: {acc['mape']}%\n"
+        f"- Total Disruptions Predicted: {cov['total_disruptions_predicted']:,}\n"
+        f"- Correct Predictions: {cov['correct_predictions']:,}\n"
+        f"- False Positives: {cov['false_positives']}\n"
+        f"- Avg Hours to Disruption: {cov['avg_hours_to_disruption']}h\n\n"
+        "=== PLATFORM FEATURES ===\n"
+        "- Dashboard: real-time KPIs including total shipments, critical count, active disruptions, risk distribution.\n"
+        "- Live Map: interactive map showing all shipment positions and disruption overlays.\n"
+        "- Shipments page: full shipment table with filtering by status, origin, destination.\n"
+        "- Route Optimization: A* sea+land routing or Bezier sea-only curves with live risk analysis.\n"
+        "- Disruptions: active disruption map with severity circles and weather conditions.\n"
+        "- Analytics: Prophet ML model forecast charts and performance metrics.\n\n"
+        "=== AVAILABLE PORTS ===\n"
+        "Shanghai, Rotterdam, Singapore, Mumbai, Los Angeles, Dubai, Hamburg, Colombo, "
+        "Jakarta, Busan, Antwerp, New York, Felixstowe, Cape Town, Bay of Biscay, and more.\n\n"
+        "=== RULES ===\n"
+        "1. If asked about a shipment ID, look in the shipment data above and provide all fields.\n"
+        "2. If asked about metrics (precision, recall, F1, avg hours, total disruptions), use the performance metrics above.\n"
+        "3. If asked about a port route or distance, calculate it from the port coordinates if possible.\n"
+        "4. If asked about weather at a port, refer to the disruption data above.\n"
+        "5. If asked about platform features, describe them accurately from the features section above.\n"
+        "6. Never refuse to answer questions related to supply chain, logistics, ports, weather, routes, or this platform.\n"
+        "7. For off-topic questions (sports, movies, politics), politely decline and redirect to platform topics.\n"
+    )
 
     contents = [
         {
